@@ -476,14 +476,23 @@ in
     in
     # The wrappers in bin/ hold the store path of their own package, which
     # differs between the two builds, so each tree is compared with its own
-    # store path replaced by the same placeholder. The CI workflow also
-    # runs `nix build --rebuild` of the package, which compares one
-    # derivation built twice.
+    # store path replaced by the same placeholder. On darwin a wrapper is a
+    # Mach-O binary whose UUID and code signature are hashes of its
+    # content, its store path included, so there each wrapper is compared
+    # by the makeCWrapper command it was made with, which it embeds. The
+    # CI workflow also runs `nix build --rebuild` of the package, which
+    # compares one derivation built twice.
     runCommand "conformance-rebuild-check" { } ''
       normalize() {
         local tree="$1" copy="$2"
         cp -r "$tree" "$copy"
         chmod -R u+w "$copy"
+        ${lib.optionalString purified.stdenv.hostPlatform.isDarwin ''
+          for wrapper in "$copy"/bin/*; do
+            ${purified.makeBinaryWrapper.extractCmd} "$tree/bin/''${wrapper##*/}" > "$wrapper"
+            test -s "$wrapper"
+          done
+        ''}
         find "$copy" -type f -exec sed -i "s|$tree|/nix/store/rebuilt|g" {} +
       }
       normalize ${appPackage} first

@@ -18,7 +18,9 @@ def run(*arguments, cwd=None, env=None):
 snapshot = json.loads(run('nix', 'flake', 'archive', '--json', '--no-write-lock-file', sdk))['path']
 system = run('nix', 'eval', '--impure', '--raw', '--expr', 'builtins.currentSystem').strip()
 with tempfile.TemporaryDirectory(prefix='composer-composition-') as temporary:
-    root = Path(temporary)
+    # The physical path: on macOS the temporary directory lies under /tmp
+    # or /var, both symlinks, and Nix refuses a path: flake through one.
+    root = Path(temporary).resolve()
     producer, consumer = root / 'producer', root / 'consumer'
     producer.mkdir()
     consumer.mkdir()
