@@ -5,13 +5,19 @@
   historicalPhpSource,
   command,
   buildComposerProject,
+  selectedPhp ? null,
+  fixture ? ./fixtures/legacy-php,
 }:
 let
   old = import historicalPhpSource {
     inherit (pkgs.stdenv.hostPlatform) system;
     config.permittedInsecurePackages = [ "php-7.4.29" ];
   };
-  php = old.php74.withExtensions ({ enabled, all }: enabled ++ [ all.zip ]);
+  php =
+    if selectedPhp == null then
+      old.php74.withExtensions ({ enabled, all }: enabled ++ [ all.zip ])
+    else
+      selectedPhp;
   composerOf =
     version: hash:
     let
@@ -38,7 +44,7 @@ let
   projectOf =
     composer:
     buildComposerProject {
-      src = ./fixtures/legacy-php;
+      src = fixture;
       inherit php composer;
     };
   check =
@@ -55,8 +61,8 @@ let
         passthru = { inherit project php composer; };
       }
       ''
-        test "$(legacy-php)" = "42 on 7.4.29"
-        test "$(cat ${project.packages.proof-legacy-php}/share/php/proof-legacy-php/built.txt)" = "7.4.29"
+        test "$(legacy-php)" = "42 on ${php.version}"
+        test "$(cat ${project.packages.proof-legacy-php}/share/php/proof-legacy-php/built.txt)" = "${php.version}"
         test -e ${project.tests}
         unzip -p ${project.release} composer.json > manifest.json
         test -s manifest.json
@@ -66,7 +72,7 @@ let
   toolsOf =
     composer:
     pkgs.symlinkJoin {
-      name = "composer-${composer.version}-php74-native-tools";
+      name = "composer-${composer.version}-php${php.version}-native-tools";
       paths = [
         (command.override {
           projectPhp = php;

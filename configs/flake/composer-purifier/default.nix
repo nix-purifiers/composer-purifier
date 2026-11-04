@@ -85,6 +85,9 @@
               inherit (inputs.purifier.lib) purifier;
               composerSource = inputs.composer-src;
               historicalPhpSource = inputs.historical-php;
+              olderPhpSource = inputs.older-php;
+              php54Source = inputs.php54-sdk;
+              php53Source = inputs.php53-sdk;
             };
             treefmt.programs.nixfmt.enable = true;
           };

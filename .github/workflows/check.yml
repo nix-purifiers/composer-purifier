@@ -81,14 +81,22 @@ jobs:
       - name: Historical PHP and native Composer lifecycle
         if: runner.os == 'Linux' && runner.arch == 'X64'
         run: |
-          for point in 1 22; do
-            case "$point" in
-              1) version=1.10.27 ;;
-              22) version=2.2.26 ;;
+          for cohort in legacy-php php56 php54 php53; do
+            case "$cohort" in
+              legacy-php) php_version=7.4.29 ;;
+              php56) php_version=5.6.26 ;;
+              php54) php_version=5.4.44 ;;
+              php53) php_version=5.3.28 ;;
             esac
-            tools="$(nix build --no-link --print-out-paths ".#checks.x86_64-linux.legacy-php-composer$point-tools")"
-            repository="$(nix build --no-link --print-out-paths ".#checks.x86_64-linux.legacy-php-composer$point.project.projections.composer")"
-            python3 tests/historical-native.py "$tools" "$repository" "$version"
+            for point in 1 22; do
+              case "$point" in
+                1) version=1.10.27 ;;
+                22) version=2.2.26 ;;
+              esac
+              tools="$(nix build --no-link --print-out-paths ".#checks.x86_64-linux.$cohort-composer$point-tools")"
+              repository="$(nix build --no-link --print-out-paths ".#checks.x86_64-linux.$cohort-composer$point.project.projections.composer")"
+              python3 tests/historical-native.py "$tools" "$repository" "$version" "$php_version" "$cohort"
+            done
           done
 
       # A check cannot run Nix, so `nix build --rebuild`, which builds one

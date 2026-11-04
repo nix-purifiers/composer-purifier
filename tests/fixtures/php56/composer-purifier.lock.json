@@ -1,0 +1,8 @@
+{
+    "version": 4,
+    "dists": {
+        "https://api.github.com/repos/php-fig/log/zipball/d49695b909c3b7628b6289db5479a1c204601f11": "sha256-llaFSGskOSGMRW6K05mVeJHlCOyDb2z1a7/uBgauYGk="
+    },
+    "sources": {},
+    "contentHash": "sha256-AQg6kR14NfLDlhLRvJ+s3TUaktOpZ3nnj4vPK/N7KEM="
+}

@@ -98,6 +98,9 @@
   # tests/dependencies.
   composerSource,
   historicalPhpSource,
+  olderPhpSource,
+  php54Source,
+  php53Source,
 }:
 let
   purified = pkgs.extend overlay;
@@ -815,4 +818,70 @@ in
       buildComposerProject
       ;
   }
+)
+
+// lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") (
+  let
+    old = import olderPhpSource {
+      system = "x86_64-linux";
+      config = { };
+    };
+    points = import ./historical-toolchains.nix {
+      inherit
+        pkgs
+        historicalPhpSource
+        command
+        buildComposerProject
+        ;
+      selectedPhp = old.php56;
+      fixture = ./fixtures/php56;
+    };
+  in
+  lib.mapAttrs' (
+    name: value: lib.nameValuePair (lib.replaceStrings [ "legacy-php" ] [ "php56" ] name) value
+  ) points
+)
+
+// lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") (
+  let
+    old = import php54Source {
+      system = "x86_64-linux";
+      config = { };
+    };
+    points = import ./historical-toolchains.nix {
+      inherit
+        pkgs
+        historicalPhpSource
+        command
+        buildComposerProject
+        ;
+      selectedPhp = old.php54;
+      fixture = ./fixtures/php54;
+    };
+  in
+  lib.mapAttrs' (
+    name: value: lib.nameValuePair (lib.replaceStrings [ "legacy-php" ] [ "php54" ] name) value
+  ) points
+)
+
+// lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") (
+  let
+    old = import php53Source {
+      system = "x86_64-linux";
+      config = { };
+    };
+    points = import ./historical-toolchains.nix {
+      inherit
+        pkgs
+        historicalPhpSource
+        command
+        buildComposerProject
+        ;
+      selectedPhp = old.php53;
+      fixture = ./fixtures/php53;
+    };
+  in
+  lib.mapAttrs' (
+    name: value: lib.nameValuePair (lib.replaceStrings [ "legacy-php" ] [ "php53" ] name) value
+  ) points
 )
