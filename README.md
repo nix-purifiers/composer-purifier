@@ -138,11 +138,13 @@ runtime must provide `bin/php`; a Composer package must provide `bin/composer`,
 its `version`, and its immutable `src` for artifact identity. Older SDKs do not
 need modern `meta.mainProgram` metadata.
 
-The checked historical points are PHP 7.4.29 with Composer 1.10.27 and 2.2.26
+The checked historical points are PHP 5.3.28, 5.4.44, 5.6.26 and 7.4.29, each with Composer
+1.10.27 and 2.2.26
 on x86_64 Linux. Their fixtures exercise locked dependencies, offline installs,
 project scripts, archives and outgoing projections. The native driver also
 checks lock/prefetch, publication byte equality, and an ordinary downstream
-Composer install and execution. These are individual points, not a minimum
+Composer install and execution. Historical native checks use the C locale so old glibc does not read a
+newer host locale archive. These are individual points, not a minimum
 PHP version or evidence for every intervening release. Earlier PHP, other
 Composer APIs, ARM historical SDKs and usable prereleases remain separate
 compatibility work; EOL status does not exclude them.

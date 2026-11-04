@@ -1,0 +1,8 @@
+#!/usr/bin/env php
+<?php
+$autoload = __DIR__ . '/../vendor/autoload.php';
+require is_file($autoload) ? $autoload : __DIR__ . '/../../../autoload.php';
+if (!class_exists('Psr\Log\NullLogger')) { exit(1); }
+$logger = new Psr\Log\NullLogger();
+$logger->info('legacy runtime');
+echo "42 on " . PHP_VERSION . "\n";
