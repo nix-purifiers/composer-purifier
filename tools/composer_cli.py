@@ -61,9 +61,11 @@ def run_native(arguments, selected, root, environment=None, bindings=None, recon
         '--argstr', 'system', environment['COMPOSER_PURIFIER_SYSTEM'],
         '--argstr', 'projectDir', str(root), '--attr', 'nativeTools',
         '--argstr', 'additionalPackagesJson', json.dumps([value['metadata'] for value in selected.values()]),
-        '--no-out-link'], text=True).strip()
+        *sdk_arguments(environment), '--no-out-link'], text=True).strip()
     environment['COMPOSER_PURIFIER_PHP'] = native + '/php/bin/php'
     environment['COMPOSER_PURIFIER_AUTOLOAD'] = native + '/composer/share/php/composer/vendor/autoload.php'
+    if not Path(environment['COMPOSER_PURIFIER_AUTOLOAD']).is_file():
+        raise ValueError('selected native Composer does not expose the resolver integration autoloader; incoming Nix bindings need an adapter for this artifact')
     if reconstruct:
         materialize_selected(root, selected, environment['COMPOSER_PURIFIER_PHP'],
                              environment['COMPOSER_PURIFIER_AUTOLOAD'], bindings, environment, anchors)
@@ -72,6 +74,11 @@ def run_native(arguments, selected, root, environment=None, bindings=None, recon
     return subprocess.call([environment['COMPOSER_PURIFIER_PHP'],
                             str(Path(__file__).with_name('composer_capture.php')), *arguments],
                            cwd=root, env=environment)
+
+
+def sdk_arguments(environment):
+    return ['--argstr', 'targetPhpExpression', environment.get('COMPOSER_PURIFIER_TARGET_PHP_EXPRESSION', ''),
+            '--argstr', 'targetComposerExpression', environment.get('COMPOSER_PURIFIER_TARGET_COMPOSER_EXPRESSION', '')]
 
 
 def main(arguments):
@@ -108,6 +115,10 @@ def main(arguments):
     roots = lock_path.parent / '.composer-purifier/inputs'
     views = project_inputs.native_views(pins, 'composer', roots)
     selected = packages(views)
+    if selected:
+        native_root = Path(os.environ['COMPOSER_PURIFIER_REAL_COMPOSER']).parent.parent
+        if not (native_root / 'share/php/composer/vendor/autoload.php').is_file():
+            raise ValueError('selected native Composer does not expose the resolver integration autoloader; incoming Nix bindings need an adapter for this artifact')
     legacy_options = []
     if options.lockfile:
         legacy_options += ['--lockfile', str(lock_path)]
@@ -172,7 +183,7 @@ def main(arguments):
             '--argstr', 'system', os.environ['COMPOSER_PURIFIER_SYSTEM'],
             '--argstr', 'repositoryTools', os.environ['COMPOSER_PURIFIER_REPOSITORY_TOOLS'],
             '--argstr', 'projectDir', str(root), '--argstr', 'lockFile', str(lock_path),
-            '--argstr', 'toolLockFile', str(native_lock), '--attr', 'repository', '--no-out-link'],
+            '--argstr', 'toolLockFile', str(native_lock), '--attr', 'repository', *sdk_arguments(os.environ), '--no-out-link'],
             text=True).strip())
         catalog = read(repository / '.catalog')
         target = Path(remaining[0]).resolve()

@@ -6,6 +6,8 @@
   python3,
   composer,
   php,
+  capturePhp ? php,
+  captureComposer ? composer,
   src,
   installed,
   composerLock,
@@ -25,6 +27,8 @@ let
     composerSource = composer.src;
     composerVersion = composer.version;
     phpVersion = php.version;
+    capturePhpVersion = capturePhp.version;
+    captureComposerSource = captureComposer.src;
   } "touch $out";
   projection =
     runCommand "composer-artifact-repository"
@@ -40,8 +44,9 @@ let
             composerLock
             origins
             ;
-          php = lib.getExe php;
-          autoload = "${composer}/share/php/composer/vendor/autoload.php";
+          php = lib.getExe' capturePhp "php";
+          autoload = "${captureComposer}/share/php/composer/vendor/autoload.php";
+          archiveNoScripts = lib.versionAtLeast composer.version "2";
           sourceIdentity = (purifier.inputIdentity src).hash;
           projectorIdentity = (purifier.inputIdentity toolchain).hash;
           dependencies = map (input: {

@@ -78,6 +78,19 @@ jobs:
       - name: Evaluate every output for both systems
         run: nix flake check --all-systems --no-build
 
+      - name: Historical PHP and native Composer lifecycle
+        if: runner.os == 'Linux' && runner.arch == 'X64'
+        run: |
+          for point in 1 22; do
+            case "$point" in
+              1) version=1.10.27 ;;
+              22) version=2.2.26 ;;
+            esac
+            tools="$(nix build --no-link --print-out-paths ".#checks.x86_64-linux.legacy-php-composer$point-tools")"
+            repository="$(nix build --no-link --print-out-paths ".#checks.x86_64-linux.legacy-php-composer$point.project.projections.composer")"
+            python3 tests/historical-native.py "$tools" "$repository" "$version"
+          done
+
       # A check cannot run Nix, so `nix build --rebuild`, which builds one
       # derivation twice and compares the outputs, runs here.
       - name: conformance-rebuild

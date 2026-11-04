@@ -111,7 +111,16 @@ def project(request, destination, catalog_path, composer):
         name = package['name']
         if name in supplied:
             continue
-        source = None if package.get('type') == 'metapackage' else (installed / 'vendor/composer' / package['install-path']).resolve()
+        if package.get('type') == 'metapackage':
+            source = None
+        elif 'install-path' in package:
+            source = (installed / 'vendor/composer' / package['install-path']).resolve()
+        else:
+            # Composer 1 records a flat installed.json without install-path.
+            # Its standard library layout is vendor/<package-name>.
+            if package.get('type', 'library') != 'library':
+                raise ValueError(f'Composer 1 package {name} requires an installation-path adapter for its type')
+            source = (installed / 'vendor' / name).resolve()
         original = lock_packages[name]
         nodes[name] = {'metadata': package, 'source': source,
                        'identity': request['origins'][name], 'version': original['version']}
@@ -189,7 +198,8 @@ def project(request, destination, catalog_path, composer):
             archive = digest({'name': name, 'version': versions[name]}) + '.zip'
             build = temporary / 'archives'
             build.mkdir(exist_ok=True)
-            subprocess.run([composer, 'archive', '--no-plugins', '--no-scripts', '--no-interaction',
+            subprocess.run([composer, 'archive', '--no-plugins',
+                            *(['--no-scripts'] if request.get('archiveNoScripts', True) else []), '--no-interaction',
                             '--format=zip', '--dir=' + str(build), '--file=' + archive[:-4]],
                            cwd=source, env=environment, check=True)
             normalize_archive(build / archive, out / archive)

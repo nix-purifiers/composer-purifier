@@ -84,6 +84,7 @@
               inherit (self.lib.composer-purifier) readLock;
               inherit (inputs.purifier.lib) purifier;
               composerSource = inputs.composer-src;
+              historicalPhpSource = inputs.historical-php;
             };
             treefmt.programs.nixfmt.enable = true;
           };

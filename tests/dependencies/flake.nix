@@ -7,6 +7,11 @@
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   inputs.treefmt-nix.url = "github:numtide/treefmt-nix";
   inputs.treefmt-nix.inputs.nixpkgs.follows = "nixpkgs";
+  # EOL PHP fixture only; production packages keep the main package set.
+  inputs.historical-php = {
+    url = "github:NixOS/nixpkgs/eabc38219184cc3e04a974fe31857d8e0eac098d";
+    flake = false;
+  };
   # The real-world project of the integration check: Composer itself, at
   # the commit of its 2.10.3 release. tests/projects/composer holds its
   # composer-purifier lockfile.
