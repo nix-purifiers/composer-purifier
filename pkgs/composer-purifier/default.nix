@@ -35,6 +35,8 @@
   writeShellApplication,
   php,
   python3,
+  projectPhp ? null,
+  projectComposer ? null,
   # The source directory of the purifier library, whose fetches the
   # nix-build calls of the commands import. The default package overlay
   # gives it from the `purifier` input of this flake.
@@ -42,6 +44,27 @@
 }:
 let
   defaultComposer = php.packages.composer;
+  nativeComposer =
+    if projectComposer != null then
+      projectComposer
+    else if projectPhp != null then
+      projectPhp.packages.composer
+    else
+      defaultComposer;
+  sdkExpression =
+    sdk: mainProgram:
+    if sdk == null then
+      ""
+    else
+      "(${(import ../../nix/lib/sdk-expression.nix sdk).expression} // { version = ${builtins.toJSON sdk.version}; meta.mainProgram = ${builtins.toJSON mainProgram}; ${
+        lib.optionalString (
+          sdk ? src
+        ) "src = ${(import ../../nix/lib/sdk-expression.nix sdk.src).expression};"
+      } })";
+  targetPhpExpression = sdkExpression projectPhp "php";
+  targetComposerExpression = sdkExpression (
+    if projectComposer != null || projectPhp != null then nativeComposer else null
+  ) "composer";
   # src/lock.php and src/check.php require src/functions.php beside them.
   scripts = ../../src;
   nixLib = ../../nix/lib;
@@ -50,7 +73,11 @@ let
     --argstr nixpkgs ${path} \
     --argstr purifier ${purifierSource} \
     --argstr system ${stdenv.hostPlatform.system}'';
-  cliArguments = nixArguments + " --argstr repositoryTools ${../../tools}";
+  cliArguments =
+    nixArguments
+    + " --argstr repositoryTools ${../../tools}"
+    + " --argstr targetPhpExpression ${lib.escapeShellArg targetPhpExpression}"
+    + " --argstr targetComposerExpression ${lib.escapeShellArg targetComposerExpression}";
 
   hashCheckout = writeShellApplication {
     name = "composer-purifier-hash-checkout";
@@ -88,7 +115,10 @@ let
     export COMPOSER_PURIFIER_SHARED=${purifierSource}
     export COMPOSER_PURIFIER_SYSTEM=${stdenv.hostPlatform.system}
     export COMPOSER_PURIFIER_SCRIPTS=${scripts}
-    export COMPOSER_PURIFIER_REAL_COMPOSER=${lib.getExe defaultComposer}
+    export COMPOSER_PURIFIER_REAL_COMPOSER=${lib.getExe nativeComposer}
+    export COMPOSER_PURIFIER_NATIVE_VERSION=${nativeComposer.version}
+    export COMPOSER_PURIFIER_TARGET_PHP_EXPRESSION=${lib.escapeShellArg targetPhpExpression}
+    export COMPOSER_PURIFIER_TARGET_COMPOSER_EXPRESSION=${lib.escapeShellArg targetComposerExpression}
     export COMPOSER_PURIFIER_LEGACY_COMPOSER=${lib.getExe legacyComposerCommand}
     export COMPOSER_PURIFIER_REPOSITORY_TOOLS=${../../tools}
   '';
@@ -178,7 +208,16 @@ let
           # The install-time policy of Composer is off in the offline
           # installs, so the advisory and malware check runs here, online.
           if [ "$audit" = 1 ]; then
-            composer audit --locked
+            ${
+              if lib.versionAtLeast nativeComposer.version "2.4" then
+                ''
+                  ${lib.getExe nativeComposer} audit --locked
+                ''
+              else
+                ''
+                  echo "composer-purifier: selected Composer has no audit command; no audit was performed" >&2
+                ''
+            }
           fi
           COMPOSER_PURIFIER_HASH_CHECKOUT="''${COMPOSER_PURIFIER_HASH_CHECKOUT:-${lib.getExe hashCheckout}}" \
             php ${scripts}/lock.php ${defaultComposer}/share/php/composer/vendor/autoload.php "''${lockArguments[@]}"
@@ -206,11 +245,11 @@ let
           fi
           if [ -n "$toolLockFile" ]; then
             toolWorkdir
-            COMPOSER="$workdir/composer.json" "$projectComposer/bin/composer" update --no-install --no-interaction --no-audit "''${operands[@]}"
+            COMPOSER="$workdir/composer.json" "$projectComposer/bin/composer" update ${lib.optionalString (lib.versionAtLeast nativeComposer.version "2") "--no-install"} --no-interaction ${lib.optionalString (lib.versionAtLeast nativeComposer.version "2.4") "--no-audit"} "''${operands[@]}"
             mkdir -p "$(dirname "$toolLockFile")"
             cp --no-preserve=mode "$workdir/composer.lock" "$toolLockFile"
           else
-            "$projectComposer/bin/composer" update --no-install --no-interaction --no-audit "''${operands[@]}"
+            "$projectComposer/bin/composer" update ${lib.optionalString (lib.versionAtLeast nativeComposer.version "2") "--no-install"} --no-interaction ${lib.optionalString (lib.versionAtLeast nativeComposer.version "2.4") "--no-audit"} "''${operands[@]}"
           fi
           lock
           ;;
@@ -287,7 +326,7 @@ let
       # the current directory, and the prefetched files lie beside it.
       lockFile="$(realpath -m "''${COMPOSER_PURIFIER_LOCKFILE:-composer-purifier.lock.json}")"
       roots="$(dirname "$lockFile")/.composer-purifier"
-      projectComposer=${defaultComposer}
+      projectComposer=${nativeComposer}
       if [ -e "$roots/composer" ]; then
         projectComposer="$(readlink -f "$roots/composer")"
       fi
@@ -304,6 +343,13 @@ let
         exit 1
       fi
       cache="$(readlink -f "$roots/cache")"
+      ${lib.optionalString (lib.versionOlder nativeComposer.version "2") ''
+        pinnedCache="$cache"
+        cache="$(mktemp -d)"
+        trap 'rm -rf "$cache"' EXIT
+        cp -rL "$pinnedCache/." "$cache/"
+        chmod -R u+w "$cache"
+      ''}
       # Composer reads composer.json and the offline composer.lock from the
       # prefetched files, and the project paths stay relative to the
       # current directory, since COMPOSER comes from the environment.
@@ -317,7 +363,9 @@ let
       # The install-time policy fetches malware and advisory lists, which
       # an offline install cannot reach; `lock` runs the audit instead.
       export COMPOSER_POLICY=0
-      exec "$projectComposer/bin/composer" "$@"
+      ${
+        if lib.versionOlder nativeComposer.version "2" then "" else "exec "
+      }"$projectComposer/bin/composer" "$@"
     '';
   };
   composerCommand = writeShellApplication {

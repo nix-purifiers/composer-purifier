@@ -97,6 +97,7 @@
   # The source of composer/composer at its 2.10.3 release, an input of
   # tests/dependencies.
   composerSource,
+  historicalPhpSource,
 }:
 let
   purified = pkgs.extend overlay;
@@ -326,7 +327,7 @@ let
     }
   '';
 in
-{
+({
   composition-native-resolver =
     runCommand "composer-native-resolver-tests"
       {
@@ -804,4 +805,14 @@ in
     assert nixpkgsFetch.urls == mirroredUrls;
     assert overriddenFetch.urls == mirroredUrls;
     runCommand "mirrors-check" { } "touch $out";
-}
+})
+// lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") (
+  import ./historical-toolchains.nix {
+    inherit
+      pkgs
+      historicalPhpSource
+      command
+      buildComposerProject
+      ;
+  }
+)

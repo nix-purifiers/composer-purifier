@@ -116,6 +116,46 @@ the project or in another one:
 the builder takes, and `composer-purifier.overrideScope` replaces what
 everything in the scope shares.
 
+### Toolchain versions
+
+The project runtime, native Composer, and metadata tooling can be selected
+independently. Pass `php` and `composer` to `buildComposerProject`; its
+`capturePhp` and `captureComposer` default to the current package set's PHP
+and Composer. Project installation, scripts and archives use the selected
+native tools. Metadata parsing uses the capture tools.
+
+For the native workflow, override the command package with the same choices:
+
+```nix
+pkgs.composer-purifier.composer-purifier.override {
+  projectPhp = historicalPhp;
+  projectComposer = historicalComposer;
+}
+```
+
+This preserves those SDK references through prefetch and publication. A PHP
+runtime must provide `bin/php`; a Composer package must provide `bin/composer`,
+its `version`, and its immutable `src` for artifact identity. Older SDKs do not
+need modern `meta.mainProgram` metadata.
+
+The checked historical points are PHP 7.4.29 with Composer 1.10.27 and 2.2.26
+on x86_64 Linux. Their fixtures exercise locked dependencies, offline installs,
+project scripts, archives and outgoing projections. The native driver also
+checks lock/prefetch, publication byte equality, and an ordinary downstream
+Composer install and execution. These are individual points, not a minimum
+PHP version or evidence for every intervening release. Earlier PHP, other
+Composer APIs, ARM historical SDKs and usable prereleases remain separate
+compatibility work; EOL status does not exclude them.
+
+Composer 1 receives a private writable copy of the pinned cache because it
+disables read-only caches. Its update command performs its normal install
+because it has no `--no-install` option. Its archive command has no
+`--no-scripts` option, so native archive hooks retain their native behavior.
+Selected versions without an audit command report that no audit was performed.
+The historical PHAR fixtures do not expose the resolver integration autoloader;
+incoming Nix bindings need an adapter for those artifacts. Outgoing ordinary
+consumption is checked independently of that missing incoming adapter.
+
 The result of `buildComposerProject` names every output from
 `composer.json`, which Nix reads at evaluation time:
 

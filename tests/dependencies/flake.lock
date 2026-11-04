@@ -91,6 +91,23 @@
         "type": "github"
       }
     },
+    "historical-php": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1659446231,
+        "narHash": "sha256-hekabNdTdgR/iLsgce5TGWmfIDZ86qjPhxDg/8TlzhE=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "eabc38219184cc3e04a974fe31857d8e0eac098d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "eabc38219184cc3e04a974fe31857d8e0eac098d",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1793341285,
@@ -142,6 +159,7 @@
         "caisson": "caisson",
         "composer-src": "composer-src",
         "flake-parts": "flake-parts_2",
+        "historical-php": "historical-php",
         "nixpkgs": "nixpkgs",
         "treefmt-nix": "treefmt-nix"
       }

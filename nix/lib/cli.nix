@@ -30,6 +30,8 @@
   additionalPackages ? [ ],
   additionalPackagesJson ? null,
   repositoryTools ? null,
+  targetPhpExpression ? "",
+  targetComposerExpression ? "",
 }:
 let
   pkgs = import nixpkgs { inherit system; };
@@ -58,35 +60,53 @@ let
   # The PHP reads composer.json and composer.lock alone, so that
   # `composer-purifier update` gets it while the purifier lockfile is stale
   # or composer.lock does not exist yet.
-  php = pkgs.callPackage ./php.nix {
-    composerJson = builtins.fromJSON (builtins.readFile (dir + "/composer.json"));
-    composerLock =
-      (
-        if builtins.pathExists composerLockPath then
-          builtins.fromJSON (builtins.readFile composerLockPath)
-        else
-          { }
-      )
-      // {
-        packages =
+  targetPhp =
+    if targetPhpExpression == "" then
+      null
+    else
+      import (builtins.toFile "composer-target-php.nix" targetPhpExpression);
+  targetComposer =
+    if targetComposerExpression == "" then
+      null
+    else
+      import (builtins.toFile "composer-target-tool.nix" targetComposerExpression);
+  php =
+    if targetPhp != null then
+      targetPhp
+    else
+      pkgs.callPackage ./php.nix {
+        composerJson = builtins.fromJSON (builtins.readFile (dir + "/composer.json"));
+        composerLock =
           (
-            if additionalPackagesJson == null then
-              additionalPackages
-            else
-              builtins.fromJSON additionalPackagesJson
-          )
-          ++ (
             if builtins.pathExists composerLockPath then
-              (builtins.fromJSON (builtins.readFile composerLockPath)).packages or [ ]
+              builtins.fromJSON (builtins.readFile composerLockPath)
             else
-              [ ]
-          );
+              { }
+          )
+          // {
+            packages =
+              (
+                if additionalPackagesJson == null then
+                  additionalPackages
+                else
+                  builtins.fromJSON additionalPackagesJson
+              )
+              ++ (
+                if builtins.pathExists composerLockPath then
+                  (builtins.fromJSON (builtins.readFile composerLockPath)).packages or [ ]
+                else
+                  [ ]
+              );
+          };
+        dev = true;
+        extraRequirements = pkgs.lib.concatMap (
+          input: input.repository.platformRequirements or [ ]
+        ) selected;
       };
-    dev = true;
-    extraRequirements = pkgs.lib.concatMap (
-      input: input.repository.platformRequirements or [ ]
-    ) selected;
-  };
+  composer = if targetComposer != null then targetComposer else php.packages.composer;
+  projectSdk =
+    pkgs.lib.optionalAttrs (targetPhp != null) { php = targetPhp; }
+    // pkgs.lib.optionalAttrs (targetComposer != null) { composer = targetComposer; };
   cache = pkgs.callPackage ./cache.nix {
     entries = {
       entries = library.entriesFor system locked;
@@ -98,7 +118,9 @@ let
     {
       purifier = library;
     }
-    // pkgs.lib.optionalAttrs (repositoryTools != null) { repositoryTools = /. + repositoryTools; }
+    // pkgs.lib.optionalAttrs (repositoryTools != null) {
+      repositoryTools = builtins.storePath repositoryTools;
+    }
   );
   baseOfflineLock = pkgs.callPackage ./offline-lock.nix {
     composerLock = locked.lockedPackages;
@@ -118,10 +140,9 @@ in
 {
   inherit cache;
   nativeTools = pkgs.linkFarm "composer-project-native-tools" {
-    inherit php;
-    composer = php.packages.composer;
+    inherit php composer;
   };
-  composer = php.packages.composer;
+  inherit composer;
   offlineLock =
     if selected == [ ] then
       baseOfflineLock
@@ -138,21 +159,27 @@ in
           cp --no-preserve=mode "$manifest" composer.json
           cp --no-preserve=mode ${baseOfflineLock} composer.lock
           ${pkgs.lib.getExe pkgs.python3} ${
-            if repositoryTools == null then ../../tools else /. + repositoryTools
+            if repositoryTools == null then ../../tools else builtins.storePath repositoryTools
           }/composer_inputs.py \
-            . "$providedRequestPath" ${pkgs.lib.getExe php} ${php.packages.composer}/share/php/composer/vendor/autoload.php
+            . "$providedRequestPath" ${pkgs.lib.getExe' php "php"} ${pkgs.php.packages.composer}/share/php/composer/vendor/autoload.php
           cp composer.lock "$out"
         '';
   release =
-    (build {
-      src = dir;
-      lockFile = lockPath;
-      composerLock = composerLockPath;
-    }).release;
+    (build (
+      projectSdk
+      // {
+        src = dir;
+        lockFile = lockPath;
+        composerLock = composerLockPath;
+      }
+    )).release;
   repository =
-    (build {
-      src = dir;
-      lockFile = lockPath;
-      composerLock = composerLockPath;
-    }).projections.composer;
+    (build (
+      projectSdk
+      // {
+        src = dir;
+        lockFile = lockPath;
+        composerLock = composerLockPath;
+      }
+    )).projections.composer;
 }

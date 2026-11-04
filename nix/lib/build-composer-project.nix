@@ -48,12 +48,16 @@
   makeBinaryWrapper,
   callPackage,
   python3,
+  php,
   repositoryTools ? ../../tools,
   # The `purifier` library namespace (lib.purifier of
   # github:nix-purifiers/purifier). The overlay passes the one of this
   # flake's pin.
   purifier,
 }:
+let
+  helperPhp = php;
+in
 {
   # The root of the Composer project: the directory of composer.json.
   src,
@@ -75,6 +79,11 @@
   # The PHP the project builds and runs with. The default is the package
   # set's `php` with the extensions the project requires (php.nix).
   php ? null,
+  # Native Composer is selected independently of the project PHP package.
+  composer ? null,
+  # Metadata tooling may need newer PHP/Composer APIs than the project.
+  capturePhp ? null,
+  captureComposer ? helperPhp.packages.composer,
   # Installs the require-dev packages into `packages` too. `tests` always
   # has them.
   dev ? false,
@@ -113,6 +122,18 @@ let
         inherit composerJson;
         composerLock = lockedPackages;
         dev = withDev;
+        extraRequirements = lib.concatMap (input: input.repository.platformRequirements or [ ]) selected;
+      };
+  composerOf = projectPhp: if composer == null then projectPhp.packages.composer else composer;
+  captureRuntime =
+    if capturePhp != null then
+      capturePhp
+    else
+      callPackage ./php.nix {
+        php = helperPhp;
+        inherit composerJson;
+        composerLock = lockedPackages;
+        dev = true;
         extraRequirements = lib.concatMap (input: input.repository.platformRequirements or [ ]) selected;
       };
 
@@ -160,7 +181,15 @@ let
     export HOME="$TMPDIR/home"
     export COMPOSER_HOME="$TMPDIR/composer-home"
     export COMPOSER_CACHE_DIR=${cache}
-    export COMPOSER_CACHE_FILES_DIR=${cache}/files
+    ${lib.optionalString (composer != null && lib.versionOlder composer.version "2") ''
+      # Composer 1 disables a cache that is not writable. Give it a private
+      # copy of the pinned bytes; the Nix store cache stays immutable.
+      export COMPOSER_CACHE_DIR="$TMPDIR/composer-writable-cache"
+      mkdir -p "$COMPOSER_CACHE_DIR"
+      cp -rL ${cache}/. "$COMPOSER_CACHE_DIR/"
+      chmod -R u+w "$COMPOSER_CACHE_DIR"
+    ''}
+    export COMPOSER_CACHE_FILES_DIR="$COMPOSER_CACHE_DIR/files"
     export COMPOSER_CACHE_READ_ONLY=1
     export COMPOSER_DISABLE_NETWORK=1
     export COMPOSER_POLICY=0
@@ -213,7 +242,7 @@ let
       passAsFile = [ "providedRequest" ];
       nativeBuildInputs = [
         projectPhp
-        projectPhp.packages.composer
+        (composerOf projectPhp)
         makeBinaryWrapper
       ];
 
@@ -225,7 +254,7 @@ let
         cp --no-preserve=mode ${offlineLock} composer.lock
         ${lib.optionalString (dependencies != [ ]) ''
           ${lib.getExe python3} ${repositoryTools}/composer_inputs.py . "$providedRequestPath" \
-            ${lib.getExe projectPhp} ${projectPhp.packages.composer}/share/php/composer/vendor/autoload.php
+            ${lib.getExe' captureRuntime "php"} ${captureComposer}/share/php/composer/vendor/autoload.php
         ''}
         composer install ${lib.escapeShellArgs installFlags}
         runHook postBuild
@@ -237,7 +266,7 @@ let
         mkdir -p "$dir"
         cp -r . "$dir"
         ${lib.concatMapStrings (bin: ''
-          makeWrapper ${lib.getExe projectPhp} "$out/bin/${binName bin}" \
+          makeWrapper ${lib.getExe' projectPhp "php"} "$out/bin/${binName bin}" \
             --add-flags "$dir/${bin}"
         '') bins}
         runHook postInstall
@@ -266,8 +295,10 @@ let
       platformRequirements
       ;
     src = source;
-    composer = (phpOf true).packages.composer;
+    composer = composerOf (phpOf true);
     php = phpOf true;
+    capturePhp = captureRuntime;
+    inherit captureComposer;
     installed = "${withDevPackages}/share/php/${pname}";
     origins = lib.listToAttrs (
       map (
@@ -310,7 +341,7 @@ let
       strictDeps = true;
       nativeBuildInputs = [
         archivePhp
-        archivePhp.packages.composer
+        (composerOf archivePhp)
       ];
       dontConfigure = true;
       dontFixup = true;
@@ -330,7 +361,7 @@ let
         {
           nativeBuildInputs = [
             withDevPackages.php
-            withDevPackages.php.packages.composer
+            (composerOf withDevPackages.php)
           ];
         }
         ''
