@@ -15,7 +15,7 @@ use Composer\Config;
 use Composer\Package\PackageInterface;
 use Composer\Util\Url;
 
-// The format version of the lockfile. nix/lib/lock-version.nix holds the
+// The format version of the lockfile. lib-overlays/default/lock-version.nix holds the
 // same number.
 const FORMAT_VERSION = 4;
 
@@ -74,7 +74,7 @@ function canonicalJson(mixed $value): string
 
 /**
  * The hash of the content of a lockfile: the SRI SHA-256 of the canonical
- * JSON of every field but `contentHash` itself. nix/lib/lock.nix computes
+ * JSON of every field but `contentHash` itself. lib-overlays/default/lock.nix computes
  * the same hash with builtins.toJSON.
  *
  * @param array<string, mixed>|\stdClass $lock
@@ -89,7 +89,7 @@ function contentHash(array|\stdClass $lock): string
 
 /**
  * The key of a checkout in the `sources` of the lockfile: the source URL
- * and reference that composer.lock gives it. nix/lib/entries.nix looks the
+ * and reference that composer.lock gives it. lib-overlays/default/entries.nix looks the
  * hash up by the same key.
  */
 function sourceKey(string $url, string $reference): string

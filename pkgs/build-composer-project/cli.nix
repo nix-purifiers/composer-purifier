@@ -51,7 +51,7 @@ let
     formats = [ "composer" ];
   };
   locked = library.checkLock (
-    import ./read-lock.nix { inherit (pkgs) lib; } {
+    import ../../lib-overlays/default/read-lock.nix { inherit (pkgs) lib; } {
       src = dir;
       lockFile = lockPath;
       composerLock = composerLockPath;
@@ -114,7 +114,7 @@ let
     };
     purifier = library;
   };
-  build = pkgs.callPackage ./build-composer-project.nix (
+  build = pkgs.callPackage ./default.nix (
     {
       purifier = library;
     }

@@ -5,7 +5,7 @@
 // URLs and cache path of each dist of composer.lock as Composer computes
 // them (distUrls and cachePathFor in src/functions.php), as canonical JSON:
 // { "<package>": { "path": …, "urls": [ … ] } }. The `urls` check compares
-// it with what nix/lib/entries.nix derives at evaluation time.
+// it with what lib-overlays/default/entries.nix derives at evaluation time.
 //
 //   php tests/unit/urls.php <Composer's vendor/autoload.php> src/functions.php
 

@@ -10,7 +10,7 @@
 // for a project whose source does not hold it.
 //
 // The lockfile holds only the hashes that composer.lock lacks; Nix derives
-// every URL, mirror and cache path from composer.lock (nix/lib/entries.nix):
+// every URL, mirror and cache path from composer.lock (lib-overlays/default/entries.nix):
 //
 //   dists    the SRI SHA-256 hash of each dist whose `shasum` is empty in
 //            composer.lock, by its `dist.url`; a dist with a `shasum` is

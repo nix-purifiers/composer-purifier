@@ -71,7 +71,7 @@
 #                          nothing
 #   urls                   the URLs and cache paths that Composer computes
 #                          (tests/unit/urls.php) are the ones that
-#                          nix/lib/entries.nix derives, for the fixtures
+#                          lib-overlays/default/entries.nix derives, for the fixtures
 #                          with dists and for composer/composer
 #   read-lock              `lib.composer-purifier.readLock` gives the lock in
 #                          memory of the contract, with its problems for a
@@ -241,18 +241,20 @@ let
   prefetched = package: src: {
     COMPOSER_PURIFIER_CACHE = package.cache;
     COMPOSER_PURIFIER_COMPOSER = package.php.packages.composer;
-    COMPOSER_PURIFIER_OFFLINE_LOCK = purified.callPackage ../nix/lib/offline-lock.nix {
-      composerLock = builtins.fromJSON (builtins.readFile (src + "/composer.lock"));
-      inherit (package.cache) entries fetch;
-      rewritePaths = false;
-    };
+    COMPOSER_PURIFIER_OFFLINE_LOCK =
+      purified.callPackage ../pkgs/build-composer-project/offline-lock.nix
+        {
+          composerLock = builtins.fromJSON (builtins.readFile (src + "/composer.lock"));
+          inherit (package.cache) entries fetch;
+          rewritePaths = false;
+        };
   };
 
   # A package of composer.lock with a mirror and a shasum: its entry has
   # the URL, then the mirror with its placeholders filled in, and the
   # SHA-1 of the shasum. The lockfile holds no hash for it.
   mirrored =
-    (import ../nix/lib/entries.nix {
+    (import ../lib-overlays/default/entries.nix {
       inherit lib;
       composerJson = { };
       lock = {
@@ -290,7 +292,7 @@ let
     fetchurl = args: args;
   } mirrored;
 
-  # The URLs and cache path of each dist, as nix/lib/entries.nix derives
+  # The URLs and cache path of each dist, as lib-overlays/default/entries.nix derives
   # them, in the canonical JSON of tests/unit/urls.php.
   derivedUrls =
     package:

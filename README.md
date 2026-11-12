@@ -173,7 +173,7 @@ The result of `buildComposerProject` names every output from
   `<name>-<version>.zip`.
 - `fetches` lists the lockfile entries that the builds fetch.
 
-`nix/lib/build-composer-project.nix` documents the builder's arguments:
+`pkgs/build-composer-project/default.nix` documents the builder's arguments:
 `src`, `fetchers`, `lockFile`, `composerLock`, `php`, `dev`, `noScripts`,
 `composerFlags`, `pathRepositories` and `srcFilter`.
 `lib.composer-purifier.readLock { src; }` gives the lock in memory of the
