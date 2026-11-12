@@ -10,7 +10,7 @@
 #                                              `composer` that runs a
 #                                              prefetched install offline
 #   composer-purifier.buildComposerProject     the builder
-#                                              (nix/lib/build-composer-project.nix),
+#                                              (pkgs/build-composer-project/default.nix),
 #                                              a package for callPackage in
 #                                              the scope
 #
@@ -38,7 +38,7 @@ in
           composer-purifier = super.composer-purifier.override {
             purifierSource = closure-inputs.purifier;
           };
-          buildComposerProject = self.callPackage ../../nix/lib/build-composer-project.nix {
+          buildComposerProject = self.callPackage ../../pkgs/build-composer-project/default.nix {
             purifier = import closure-inputs.purifier { inherit (final) lib; };
           };
         }

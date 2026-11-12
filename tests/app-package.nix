@@ -7,7 +7,7 @@
 #
 # to build the same derivation again and compare the two outputs.
 let
-  flake = builtins.getFlake (toString ./..);
+  flake = builtins.getFlake (toString ../.);
   pkgs = flake.inputs.nixpkgs.legacyPackages.${builtins.currentSystem}.extend flake.overlays.default;
 in
 (pkgs.composer-purifier.buildComposerProject {

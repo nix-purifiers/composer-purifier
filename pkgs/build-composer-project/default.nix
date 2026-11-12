@@ -103,7 +103,9 @@ let
   # The lock in memory (read-lock.nix), which checkLock of the purifier
   # library fails on when it has problems.
   locked = purifier.checkLock (
-    import ./read-lock.nix { inherit lib; } { inherit src lockFile composerLock; }
+    import ../../lib-overlays/default/read-lock.nix { inherit lib; } {
+      inherit src lockFile composerLock;
+    }
   );
   inherit (locked) composerJson lockedPackages;
 
@@ -197,7 +199,7 @@ let
   '';
 
   # `vendor/name` becomes the package name `vendor-name`.
-  pname = import ./package-name.nix { inherit composerJson src; };
+  pname = import ../../lib-overlays/default/package-name.nix { inherit composerJson src; };
   version = composerJson.version or "0";
 
   defaultSrcFilter =

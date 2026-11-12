@@ -10,7 +10,7 @@
 #
 #   nix build --file tests/tampered-hash.nix --no-link
 let
-  flake = builtins.getFlake (toString ./..);
+  flake = builtins.getFlake (toString ../.);
   pkgs = flake.inputs.nixpkgs.legacyPackages.${builtins.currentSystem};
   lock = flake.lib.composer-purifier.readLock { src = ./fixtures/app; };
   monolog = builtins.head (

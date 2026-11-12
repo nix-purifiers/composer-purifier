@@ -7,7 +7,7 @@
 #       runs `composer audit --locked`, then writes
 #       composer-purifier.lock.json next to composer.lock (src/lock.php)
 #   composer-purifier prefetch
-#       builds, with nix-build (nix/lib/cli.nix), the Composer cache of the
+#       builds, with nix-build (pkgs/build-composer-project/cli.nix), the Composer cache of the
 #       lockfile, Composer on the PHP the project requires with its
 #       require-dev packages, and the composer.lock of an offline install;
 #       keeps them alive with GC roots under .composer-purifier
@@ -25,7 +25,7 @@
 # COMPOSER_PURIFIER_OFFLINE_LOCK instead when all three are set, and then
 # runs no nix-build. `lock` hashes version-control checkouts with the
 # command that COMPOSER_PURIFIER_HASH_CHECKOUT names, by default
-# composer-purifier-hash-checkout (nix/lib/hash-checkout.nix).
+# composer-purifier-hash-checkout (pkgs/build-composer-project/hash-checkout.nix).
 {
   lib,
   path,
@@ -43,6 +43,16 @@
   purifierSource ? throw "composer-purifier: the composer-purifier package needs the source of the purifier library as purifierSource.",
 }:
 let
+  runtime = lib.fileset.toSource {
+    root = ../..;
+    fileset = lib.fileset.unions [
+      ../../lib-overlays
+      ../../pkgs
+      ../../src
+      ../../tools
+      ../../flake.lock
+    ];
+  };
   defaultComposer = php.packages.composer;
   nativeComposer =
     if projectComposer != null then
@@ -56,10 +66,10 @@ let
     if sdk == null then
       ""
     else
-      "(${(import ../../nix/lib/sdk-expression.nix sdk).expression} // { version = ${builtins.toJSON sdk.version}; meta.mainProgram = ${builtins.toJSON mainProgram}; ${
+      "(${(import ../build-composer-project/sdk-expression.nix sdk).expression} // { version = ${builtins.toJSON sdk.version}; meta.mainProgram = ${builtins.toJSON mainProgram}; ${
         lib.optionalString (
           sdk ? src
-        ) "src = ${(import ../../nix/lib/sdk-expression.nix sdk.src).expression};"
+        ) "src = ${(import ../build-composer-project/sdk-expression.nix sdk.src).expression};"
       } })";
   targetPhpExpression = sdkExpression projectPhp "php";
   targetComposerExpression = sdkExpression (
@@ -67,7 +77,7 @@ let
   ) "composer";
   # src/lock.php and src/check.php require src/functions.php beside them.
   scripts = ../../src;
-  nixLib = ../../nix/lib;
+  nixLib = "${runtime}/pkgs/build-composer-project";
 
   nixArguments = ''
     --argstr nixpkgs ${path} \
