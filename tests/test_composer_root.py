@@ -9,10 +9,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.environ.get('COMPOSER_REPOSITORY_TOOLS',
                                 str(Path(__file__).resolve().parents[1] / 'tools')))
-from composer_root import FORMAT, observe, payload, verify
+from composer_root import FORMAT, capture, observe, payload, verify
 
 composer, php, autoload = sys.argv[1:4]
 sys.argv = sys.argv[:1]
@@ -128,6 +129,25 @@ class NativeRoot(unittest.TestCase):
     def test_explicit_provenance_path_must_not_silently_fall_back(self):
         with self.assertRaisesRegex(ValueError, 'provenance file is missing'):
             verify(dict(self.request, rootContext=str(self.root / 'missing.json'), rootContextExplicit=True))
+
+    def test_capture_binds_the_actual_install_environment_and_rejects_late_changes(self):
+        names = ['COMPOSER_ROOT_VERSION', 'COMPOSER_HOME', 'COMPOSER_CACHE_DIR', 'HOME', 'COMPOSER']
+        snapshot = {'format': 'composer-purifier-native-install-env-v1',
+                    'values': {name: self.environment.get(name) for name in names}}
+        path = self.root / 'native-install-env.json'
+        path.write_text(json.dumps(snapshot))
+        expected_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+        with patch.dict(os.environ, self.environment, clear=True):
+            result = capture(dict(self.request, nativeVersionInput=None), path, expected_hash)
+            self.assertEqual(result['nativeVersionInput'], '0.24.0')
+            with self.assertRaisesRegex(ValueError, 'declared root version differs'):
+                capture(dict(self.request, nativeVersionInput='0.25.0'), path, expected_hash)
+            os.environ['COMPOSER_ROOT_VERSION'] = '0.25.0'
+            with self.assertRaisesRegex(ValueError, 'environment changed before root capture'):
+                capture(self.request, path, expected_hash)
+        path.write_text(path.read_text() + '\n')
+        with self.assertRaisesRegex(ValueError, 'snapshot changed'):
+            capture(self.request, path, expected_hash)
 
     def test_explicit_native_version_mismatch_is_refused(self):
         with self.assertRaises(subprocess.CalledProcessError):

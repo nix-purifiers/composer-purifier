@@ -187,6 +187,9 @@ def verify(request):
     if request.get('rootContextExplicit') and not context_path.is_file():
         raise ValueError('composer-purifier: explicit native root provenance file is missing')
     captured = json.loads(context_path.read_text()) if context_path.exists() else None
+    if captured is None and not (Path(request['installed']) / 'vendor/composer/installed.php').is_file() and \
+            str(request.get('nativeComposerVersion', '')).startswith('1.'):
+        raise ValueError('composer-purifier: Composer 1 projection requires root context captured during native installation')
     if captured is not None:
         if captured.get('format') != FORMAT:
             raise ValueError('composer-purifier: unsupported native root provenance format')
@@ -205,11 +208,32 @@ def verify(request):
     return current, digest(canonical(semantic))
 
 
+def capture(request, environment_file, environment_hash):
+    raw = Path(environment_file).read_bytes()
+    if digest(raw) != environment_hash:
+        raise ValueError('composer-purifier: native installation environment snapshot changed')
+    environment = json.loads(raw)
+    if environment.get('format') != 'composer-purifier-native-install-env-v1':
+        raise ValueError('composer-purifier: invalid native installation environment snapshot')
+    for name, value in environment['values'].items():
+        if os.environ.get(name) != value:
+            raise ValueError('composer-purifier: installation environment changed before root capture: ' + name)
+    actual_version = environment['values']['COMPOSER_ROOT_VERSION']
+    if request.get('nativeVersionInput') is not None and request['nativeVersionInput'] != actual_version:
+        raise ValueError('composer-purifier: declared root version differs from native installation environment')
+    current = observe(dict(request, nativeVersionInput=actual_version))
+    current['evidence']['nativeInstallEnvironment'] = environment
+    current['evidence']['nativeInstallEnvironmentSha256'] = environment_hash
+    return current
+
+
 if __name__ == '__main__':
     request = json.loads(Path(sys.argv[1]).read_text())
     if len(sys.argv) > 3:
         request['installed'] = sys.argv[3]
-    context = observe(request)
+    if len(sys.argv) != 6:
+        raise ValueError('composer-purifier: root capture requires the original native installation environment snapshot and hash')
+    context = capture(request, sys.argv[4], sys.argv[5])
     destination = Path(sys.argv[2])
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(context, indent=2) + '\n')

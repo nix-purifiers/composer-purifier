@@ -264,6 +264,8 @@ let
           ${lib.getExe python3} ${repositoryTools}/composer_inputs.py . "$providedRequestPath" \
             ${lib.getExe' captureRuntime "php"} ${captureComposer}/share/php/composer/vendor/autoload.php
         ''}
+        ${lib.getExe python3} -c 'import json,os,sys; from pathlib import Path; Path(sys.argv[1]).write_text(json.dumps({"format":"composer-purifier-native-install-env-v1","values":{k:os.environ.get(k) for k in ["COMPOSER_ROOT_VERSION","COMPOSER_HOME","COMPOSER_CACHE_DIR","HOME","COMPOSER"]}},sort_keys=True))' "$TMPDIR/composer-native-install-env.json"
+        composerNativeInstallEnvHash="$(${lib.getExe python3} -c 'import hashlib,sys; from pathlib import Path; print(hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest())' "$TMPDIR/composer-native-install-env.json")"
         composer install ${lib.escapeShellArgs installFlags}
         runHook postBuild
       '';
@@ -303,7 +305,7 @@ let
                 }) selected;
               }
             )
-          } "$dir/.composer-purifier/root-context.json" "$dir"
+          } "$dir/.composer-purifier/root-context.json" "$dir" "$TMPDIR/composer-native-install-env.json" "$composerNativeInstallEnvHash"
         ''}
       '';
 
