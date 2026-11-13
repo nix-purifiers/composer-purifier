@@ -1,9 +1,14 @@
 <?php
 // Composer 1 authority: its actual PHAR, target PHP, RootPackage and parser.
 // Keep this data helper compatible with the existing historical PHP points.
+// Match Composer 1's native CLI and Console\Application startup before Factory.
+setlocale(LC_ALL, 'C');
 require 'phar://' . $argv[1] . '/vendor/autoload.php';
 if (strpos(Composer\Composer::VERSION, '1.') !== 0 || Composer\Composer::VERSION !== $argv[3]) {
     throw new RuntimeException('composer-purifier: legacy root adapter requires the selected native Composer 1');
+}
+if (function_exists('date_default_timezone_set') && function_exists('date_default_timezone_get')) {
+    date_default_timezone_set(Composer\Util\Silencer::call('date_default_timezone_get'));
 }
 $installed = realpath($argv[2]);
 if ($installed === false) {
