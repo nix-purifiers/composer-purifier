@@ -14,8 +14,11 @@
   origins,
   dependencies,
   platformRequirements,
+  originPaths ? { },
+  pathRepositories ? { },
+  rootContext ? "${installed}/.composer-purifier/root-context.json",
   repositoryTools ? ../../tools,
-}:
+}@parameters:
 let
   selected = purifier.projectInputs {
     inherit dependencies;
@@ -29,6 +32,7 @@ let
     phpVersion = php.version;
     capturePhpVersion = capturePhp.version;
     captureComposerSource = captureComposer.src;
+    captureComposerVersion = captureComposer.version;
   } "touch $out";
   projection =
     runCommand "composer-artifact-repository"
@@ -43,8 +47,21 @@ let
             installed
             composerLock
             origins
+            rootContext
             ;
+          runtimeIdentity = {
+            php = toString php;
+            composer = toString composer;
+            capturePhp = toString capturePhp;
+            captureComposer = toString captureComposer;
+          };
+          rootContextExplicit = parameters ? rootContext;
+          originPaths = lib.mapAttrs (_: value: "${value}") originPaths;
+          pathRepositories = lib.mapAttrs (_: value: "${value}") pathRepositories;
           php = lib.getExe' capturePhp "php";
+          nativePhp = lib.getExe' php "php";
+          nativeComposerSource = toString composer.src;
+          nativeComposerVersion = composer.version;
           autoload = "${captureComposer}/share/php/composer/vendor/autoload.php";
           archiveNoScripts = lib.versionAtLeast composer.version "2";
           sourceIdentity = (purifier.inputIdentity src).hash;

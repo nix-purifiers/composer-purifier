@@ -1,0 +1,72 @@
+<?php
+// Composer 1 authority: its actual PHAR, target PHP, RootPackage and parser.
+// Keep this data helper compatible with the existing historical PHP points.
+// Match Composer 1's native CLI and Console\Application startup before Factory.
+setlocale(LC_ALL, 'C');
+require 'phar://' . $argv[1] . '/vendor/autoload.php';
+if (strpos(Composer\Composer::VERSION, '1.') !== 0 || Composer\Composer::VERSION !== $argv[3]) {
+    throw new RuntimeException('composer-purifier: legacy root adapter requires the selected native Composer 1');
+}
+if (function_exists('date_default_timezone_set') && function_exists('date_default_timezone_get')) {
+    date_default_timezone_set(Composer\Util\Silencer::call('date_default_timezone_get'));
+}
+$installed = realpath($argv[2]);
+if ($installed === false) {
+    throw new RuntimeException('composer-purifier: missing installed native project');
+}
+$factory = new Composer\Factory();
+// fullLoad=false injects a 1.0.0 shortcut before RootPackageLoader. Never use it.
+$composer = $factory->createComposer(new Composer\IO\NullIO(), $installed . '/composer.json', false, $installed, true);
+$package = $composer->getPackage();
+$parser = new Composer\Package\Version\VersionParser();
+$normalized = $parser->normalize($package->getVersion());
+$pretty = $package->getPrettyVersion();
+$sourceVersion = $pretty;
+try {
+    if ($parser->normalize($pretty) !== $normalized) {
+        throw new RuntimeException('composer-purifier: inconsistent native Composer 1 root versions');
+    }
+} catch (UnexpectedValueException $error) {
+    // This exact native diagnostic is not a version. The version comes from
+    // RootPackage itself, independently normalized by the same native parser.
+    if ($pretty !== 'No version set (parsed as 1.0.0)') {
+        throw $error;
+    }
+    $sourceVersion = $normalized;
+}
+if (isset($argv[4]) && $argv[4] !== '' && $parser->normalize($argv[4]) !== $normalized) {
+    throw new RuntimeException('composer-purifier: explicit native root version differs from Composer 1 RootPackage');
+}
+$aliases = $package->getAliases();
+foreach ($aliases as $alias) {
+    if (isset($alias['alias'], $alias['alias_normalized']) &&
+        $parser->normalize($alias['alias']) !== $alias['alias_normalized']) {
+        throw new RuntimeException('composer-purifier: inconsistent native Composer 1 root alias');
+    }
+}
+$nativePluginRecords = array();
+foreach ($composer->getRepositoryManager()->getLocalRepository()->getPackages() as $installedPackage) {
+    if ($installedPackage->getType() === 'composer-plugin') {
+        $nativePluginRecords[$installedPackage->getName()] = array(
+            'name' => $installedPackage->getName(),
+            'pretty_version' => $installedPackage->getPrettyVersion(),
+            'version' => $installedPackage->getVersion(),
+            'type' => $installedPackage->getType(),
+            'install_path' => realpath($composer->getInstallationManager()->getInstallPath($installedPackage))
+        );
+    }
+}
+echo json_encode(array(
+    'name' => $package->getName(),
+    'pretty_version' => $pretty,
+    'version' => $normalized,
+    'source_version' => $sourceVersion,
+    'reference' => $package->getSourceReference(),
+    'type' => $package->getType(),
+    'aliases' => $aliases,
+    'dev' => $package->isDev(),
+    'install_path' => $installed,
+    'authority' => 'Composer1RootPackage',
+    'native_plugin_records' => $nativePluginRecords,
+    'composer_version' => Composer\Composer::VERSION
+));

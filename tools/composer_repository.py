@@ -124,15 +124,20 @@ def project(request, destination, catalog_path, composer):
         original = lock_packages[name]
         nodes[name] = {'metadata': package, 'source': source,
                        'identity': request['origins'][name], 'version': original['version']}
+    from composer_root import verify
+    root_context, root_identity = verify(request)
+    for name, node in nodes.items():
+        node['identity'] = {'origin': node['identity'],
+                            'installedPayload': root_context['nativePackagePayloads'].get(name)}
     nodes[root_name] = {'metadata': root, 'source': Path(request['src']),
-                        'identity': request['sourceIdentity'], 'version': root.get('version', '1.0.0')}
+                        'identity': root_identity, 'version': root_context['nativeRoot']['source_version']}
     names = set(nodes) | set(supplied)
     link_packages = {name: {'metadata': node['metadata'], 'version': node['version']} for name, node in nodes.items()}
     link_packages.update({name: {'metadata': value[2], 'version': value[0]['sourceVersion']}
                           for name, value in supplied.items()})
     native_links = json.loads(subprocess.check_output([
         request['php'], str(Path(__file__).with_name('composer_links.php')), request['autoload']],
-        input=json.dumps({'packages': link_packages, 'installed': [root_name, *[package['name'] for package in packages]]}), text=True))
+        input=json.dumps({'root': root_name, 'packages': link_packages, 'installed': [root_name, *[package['name'] for package in packages]]}), text=True))
     links = native_links['links']
     def edges(name):
         fields = ('require', 'require-dev') if name == root_name else ('require',)

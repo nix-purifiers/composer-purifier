@@ -41,6 +41,22 @@ in
           buildComposerProject = self.callPackage ../../pkgs/build-composer-project/default.nix {
             purifier = import closure-inputs.purifier { inherit (final) lib; };
           };
+          # Paths may be unbuilt derivation outputs: metadata is read at build time.
+          projectComposerRepository =
+            args:
+            let
+              projectPhp = args.php or final.php;
+            in
+            self.callPackage ../../pkgs/build-composer-project/composer-projections.nix (
+              {
+                purifier = import closure-inputs.purifier { inherit (final) lib; };
+                php = projectPhp;
+                composer = projectPhp.packages.composer;
+                dependencies = [ ];
+                platformRequirements = [ ];
+              }
+              // args
+            );
         }
       );
     };

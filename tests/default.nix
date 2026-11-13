@@ -347,6 +347,8 @@ in
       ''
         python3 ${./test_composer_repository.py} ${lib.getExe pkgs.php.packages.composer} \
           ${lib.getExe pkgs.php} ${pkgs.php.packages.composer}/share/php/composer/vendor/autoload.php
+        python3 ${./test_composer_root.py} ${lib.getExe pkgs.php.packages.composer} \
+          ${lib.getExe pkgs.php} ${pkgs.php.packages.composer}/share/php/composer/vendor/autoload.php
         touch "$out"
       '';
   composition-native-export = import ./composition-export.nix {

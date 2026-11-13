@@ -48,6 +48,7 @@
   makeBinaryWrapper,
   callPackage,
   python3,
+  writeText,
   php,
   repositoryTools ? ../../tools,
   # The `purifier` library namespace (lib.purifier of
@@ -81,6 +82,8 @@ in
   php ? null,
   # Native Composer is selected independently of the project PHP package.
   composer ? null,
+  # An explicit native Composer input, never an injected manifest version.
+  rootVersion ? null,
   # Metadata tooling may need newer PHP/Composer APIs than the project.
   capturePhp ? null,
   captureComposer ? helperPhp.packages.composer,
@@ -151,6 +154,17 @@ let
     inherit dependencies;
     formats = [ "composer" ];
   };
+  originPaths = lib.listToAttrs (
+    map (package: lib.nameValuePair package.name "${cache.fetch entries.byName.${package.name}}") (
+      builtins.filter (
+        package:
+        (package.type or "library") != "metapackage"
+        && (package.dist or null) == null
+        && entries.byName ? ${package.name}
+      ) ((lockedPackages.packages or [ ]) ++ (lockedPackages.packages-dev or [ ]))
+    )
+  );
+  boundPathRepositories = lib.mapAttrs (_: value: "${value}") pathRepositories;
   platformRequirements = lib.unique (
     builtins.filter (name: name == "php" || lib.hasPrefix "ext-" name || lib.hasPrefix "composer-" name)
       (
@@ -183,6 +197,9 @@ let
     export HOME="$TMPDIR/home"
     export COMPOSER_HOME="$TMPDIR/composer-home"
     export COMPOSER_CACHE_DIR=${cache}
+    ${lib.optionalString (rootVersion != null) ''
+      export COMPOSER_ROOT_VERSION=${lib.escapeShellArg rootVersion}
+    ''}
     ${lib.optionalString (composer != null && lib.versionOlder composer.version "2") ''
       # Composer 1 disables a cache that is not writable. Give it a private
       # copy of the pinned bytes; the Nix store cache stays immutable.
@@ -258,6 +275,8 @@ let
           ${lib.getExe python3} ${repositoryTools}/composer_inputs.py . "$providedRequestPath" \
             ${lib.getExe' captureRuntime "php"} ${captureComposer}/share/php/composer/vendor/autoload.php
         ''}
+        ${lib.getExe python3} -c 'import json,os,sys; from pathlib import Path; Path(sys.argv[1]).write_text(json.dumps({"format":"composer-purifier-native-install-env-v1","values":{k:os.environ.get(k) for k in ["COMPOSER_ROOT_VERSION","COMPOSER_HOME","COMPOSER_CACHE_DIR","HOME","COMPOSER"]}},sort_keys=True))' "$TMPDIR/composer-native-install-env.json"
+        composerNativeInstallEnvHash="$(${lib.getExe python3} -c 'import hashlib,sys; from pathlib import Path; print(hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest())' "$TMPDIR/composer-native-install-env.json")"
         composer install ${lib.escapeShellArgs installFlags}
         runHook postBuild
       '';
@@ -272,6 +291,35 @@ let
             --add-flags "$dir/${bin}"
         '') bins}
         runHook postInstall
+        ${lib.optionalString withDev ''
+          ${lib.getExe python3} ${repositoryTools}/composer_root.py ${
+            writeText "composer-native-root-request.json" (
+              builtins.toJSON {
+                src = source;
+                inherit composerLock;
+                inherit originPaths;
+                pathRepositories = boundPathRepositories;
+                sourceIdentity = (purifier.inputIdentity source).hash;
+                php = lib.getExe' captureRuntime "php";
+                nativePhp = lib.getExe' projectPhp "php";
+                nativeComposerSource = toString (composerOf projectPhp).src;
+                nativeComposerVersion = (composerOf projectPhp).version;
+                autoload = "${captureComposer}/share/php/composer/vendor/autoload.php";
+                nativeVersionInput = rootVersion;
+                runtimeIdentity = {
+                  php = toString projectPhp;
+                  composer = toString (composerOf projectPhp);
+                  capturePhp = toString captureRuntime;
+                  captureComposer = toString captureComposer;
+                };
+                dependencies = map (input: {
+                  repository = toString input.repository;
+                  catalog = input.repository.catalog;
+                }) selected;
+              }
+            )
+          } "$dir/.composer-purifier/root-context.json" "$dir" "$TMPDIR/composer-native-install-env.json" "$composerNativeInstallEnvHash"
+        ''}
       '';
 
       passthru = {
@@ -295,7 +343,9 @@ let
       dependencies
       repositoryTools
       platformRequirements
+      originPaths
       ;
+    pathRepositories = boundPathRepositories;
     src = source;
     composer = composerOf (phpOf true);
     php = phpOf true;

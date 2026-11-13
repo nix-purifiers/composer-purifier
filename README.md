@@ -73,6 +73,27 @@ load the saved pins automatically, or accept producer packages through
 `dependencies = [ producer ];`. Packages and releases expose their own
 `projections.composer` for further composition.
 
+For a producer whose source and native installation are generated derivation
+outputs, `pkgs.composer-purifier.projectComposerRepository` exposes the same
+build-time projector. Pass `src`, the installed project root as `installed`,
+the actual captured `composerLock` path, and `origins` for downloaded packages.
+`dependencies` supplies existing Composer projections; `platformRequirements`
+records the native PHP and extension requirements. These paths remain unbuilt
+during evaluation. Metadata is read and checked when the repository builds.
+The source itself may have no `composer.lock`; the captured input lock and the
+effective installed lock are bound separately. If the native installation used
+the existing offline lock rewrites, pass `originPaths` for source-only packages
+and `pathRepositories` for outside path repositories. Both default to `{ }`
+and bind the exact immutable source directories used by the installer. Native
+package records are checked across the captured lock, effective lock and
+installation, allowing only those bound rewrites.
+
+Projection roots use the target installation's native root metadata, not the
+metadata tooling's own root package or an invented default version. The
+projector checks the source manifest, captured and installed locks, authored
+payload and native runtime provenance. It requires the full declared native
+development graph. Authored cache directories are part of the source payload.
+
 ## Building the project with Nix
 
 Once the native development workflow is working, you can also build and
@@ -123,6 +144,12 @@ independently. Pass `php` and `composer` to `buildComposerProject`; its
 `capturePhp` and `captureComposer` default to the current package set's PHP
 and Composer. Project installation, scripts and archives use the selected
 native tools. Metadata parsing uses the capture tools.
+
+`rootVersion = "0.24.0";` optionally supplies `COMPOSER_ROOT_VERSION` to native
+Composer installation and archive commands. It leaves `composer.json`
+unchanged; the root version still comes from Composer's resulting metadata.
+Composer 1 roots are captured and verified with that selected Composer's own
+`RootPackage` and version parser, using its actual target PHP runtime.
 
 For the native workflow, override the command package with the same choices:
 

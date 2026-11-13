@@ -7,6 +7,11 @@ $request = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERRO
 $parser = new Composer\Package\Version\VersionParser();
 $result = [];
 foreach ($request['packages'] as $name => $package) {
+    // A supplied repository can also contain its producer's development graph.
+    // Composer does not install a dependency's require-dev in this consumer.
+    if (!in_array($name, $request['installed'], true)) {
+        continue;
+    }
     foreach (['require', 'require-dev'] as $field) {
         foreach ($package['metadata'][$field] ?? [] as $dependency => $requirement) {
             if (isset($request['packages'][$dependency]) && in_array($dependency, $request['installed'], true)) {
@@ -32,6 +37,9 @@ foreach ($request['packages'] as $name => $package) {
             }
             if ($providers !== []) {
                 $result[$name][$field][$dependency] = array_keys($providers);
+            } elseif (($field === 'require' || $name === ($request['root'] ?? null)) &&
+                      !Composer\Repository\PlatformRepository::isPlatformPackage($dependency)) {
+                throw new RuntimeException('composer-purifier: unresolved native dependency ' . $name . ' -> ' . $dependency);
             }
         }
     }
