@@ -191,6 +191,47 @@ class NativeRoot(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'native development installation'):
             observe(self.request)
 
+    def test_same_version_reference_and_dependency_metadata_mutations_are_rejected(self):
+        library = self.source / 'devlib'
+        library.mkdir()
+        (library / 'composer.json').write_text(json.dumps({
+            'name': 'native/local-record', 'version': '1.0.0', 'license': 'MIT',
+            'require': {'php': '>=7.4'}, 'provide': {'native/virtual': '1.0.0'},
+            'replace': {'native/replaced': 'self.version'},
+        }))
+        manifest = json.loads((self.source / 'composer.json').read_text())
+        manifest.update({'require-dev': {'native/local-record': '1.0.0'},
+                         'repositories': [{'type': 'path', 'url': './devlib',
+                                           'options': {'symlink': False}}, {'packagist.org': False}]})
+        (self.source / 'composer.json').write_text(json.dumps(manifest))
+        shutil.rmtree(self.installed)
+        shutil.copytree(self.source, self.installed, symlinks=True)
+        subprocess.run([composer, 'update', '--no-interaction', '--no-progress'],
+                       cwd=self.installed, env=self.environment, check=True,
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.lock.write_bytes((self.installed / 'composer.lock').read_bytes())
+        observe(self.request)
+        effective_path = self.installed / 'composer.lock'
+        installed_path = self.installed / 'vendor/composer/installed.json'
+        effective = effective_path.read_bytes()
+        records = installed_path.read_bytes()
+        changed = json.loads(effective)
+        changed['packages-dev'][0]['dist']['reference'] = 'different-same-version-source'
+        effective_path.write_text(json.dumps(changed))
+        with self.assertRaisesRegex(ValueError, 'effective lock differs'):
+            observe(self.request)
+        effective_path.write_bytes(effective)
+        for field, value in [('source', {'type': 'git', 'url': 'https://invalid.example/record.git', 'reference': 'changed'}),
+                             ('require', {'php': '>=99'}), ('provide', {'native/virtual': '9.9'}),
+                             ('replace', {'native/replaced': '9.9'})]:
+            changed = json.loads(records)
+            changed['packages'][0][field] = value
+            installed_path.write_text(json.dumps(changed))
+            with self.assertRaisesRegex(ValueError, 'installed metadata differs', msg=field):
+                observe(self.request)
+        installed_path.write_bytes(records)
+        observe(self.request)
+
     def test_unresolved_root_dev_requirement_is_not_silently_dropped(self):
         document = json.loads((self.source / 'composer.json').read_text())
         document['require-dev'] = {'native/missing-dev': '^1.0'}

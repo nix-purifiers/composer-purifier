@@ -14,6 +14,8 @@
   origins,
   dependencies,
   platformRequirements,
+  originPaths ? { },
+  pathRepositories ? { },
   rootContext ? "${installed}/.composer-purifier/root-context.json",
   repositoryTools ? ../../tools,
 }@parameters:
@@ -54,6 +56,8 @@ let
             captureComposer = toString captureComposer;
           };
           rootContextExplicit = parameters ? rootContext;
+          originPaths = lib.mapAttrs (_: value: "${value}") originPaths;
+          pathRepositories = lib.mapAttrs (_: value: "${value}") pathRepositories;
           php = lib.getExe' capturePhp "php";
           nativePhp = lib.getExe' php "php";
           nativeComposerSource = toString composer.src;

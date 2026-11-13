@@ -154,6 +154,17 @@ let
     inherit dependencies;
     formats = [ "composer" ];
   };
+  originPaths = lib.listToAttrs (
+    map (package: lib.nameValuePair package.name "${cache.fetch entries.byName.${package.name}}") (
+      builtins.filter (
+        package:
+        (package.type or "library") != "metapackage"
+        && (package.dist or null) == null
+        && entries.byName ? ${package.name}
+      ) ((lockedPackages.packages or [ ]) ++ (lockedPackages.packages-dev or [ ]))
+    )
+  );
+  boundPathRepositories = lib.mapAttrs (_: value: "${value}") pathRepositories;
   platformRequirements = lib.unique (
     builtins.filter (name: name == "php" || lib.hasPrefix "ext-" name || lib.hasPrefix "composer-" name)
       (
@@ -286,6 +297,8 @@ let
               builtins.toJSON {
                 src = source;
                 inherit composerLock;
+                inherit originPaths;
+                pathRepositories = boundPathRepositories;
                 sourceIdentity = (purifier.inputIdentity source).hash;
                 php = lib.getExe' captureRuntime "php";
                 nativePhp = lib.getExe' projectPhp "php";
@@ -330,7 +343,9 @@ let
       dependencies
       repositoryTools
       platformRequirements
+      originPaths
       ;
+    pathRepositories = boundPathRepositories;
     src = source;
     composer = composerOf (phpOf true);
     php = phpOf true;

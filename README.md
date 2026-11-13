@@ -81,7 +81,12 @@ the actual captured `composerLock` path, and `origins` for downloaded packages.
 records the native PHP and extension requirements. These paths remain unbuilt
 during evaluation. Metadata is read and checked when the repository builds.
 The source itself may have no `composer.lock`; the captured input lock and the
-effective installed lock are bound separately.
+effective installed lock are bound separately. If the native installation used
+the existing offline lock rewrites, pass `originPaths` for source-only packages
+and `pathRepositories` for outside path repositories. Both default to `{ }`
+and bind the exact immutable source directories used by the installer. Native
+package records are checked across the captured lock, effective lock and
+installation, allowing only those bound rewrites.
 
 Projection roots use the target installation's native root metadata, not the
 metadata tooling's own root package or an invented default version. The

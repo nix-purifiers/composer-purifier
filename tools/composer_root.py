@@ -25,6 +25,16 @@ def canonical(data):
     return json.dumps(data, sort_keys=True, separators=(',', ':')).encode()
 
 
+def native_output(command, **options):
+    result = subprocess.run(command, capture_output=True, text=True, **options)
+    try:
+        result.check_returncode()
+    except subprocess.CalledProcessError as error:
+        error.add_note('Native metadata stdout:\n' + result.stdout + '\nNative metadata stderr:\n' + result.stderr)
+        raise
+    return result.stdout
+
+
 def payload(source, paths=None):
     source = Path(source).resolve()
     records, raw_modes = {}, {}
@@ -77,13 +87,73 @@ def installed_snapshot(root):
     return result
 
 
+def package_map(packages):
+    result = {}
+    for package in packages:
+        name = package['name']
+        if name in result:
+            raise ValueError('composer-purifier: duplicate native package record: ' + name)
+        result[name] = package
+    return result
+
+
+def immutable_directory(value):
+    path = Path(value)
+    if not path.is_absolute() or not path.resolve(strict=True).is_relative_to('/nix/store') or not path.is_dir():
+        raise ValueError('composer-purifier: offline package rewrite requires an immutable Nix source directory')
+    return str(path)
+
+
+def validate_packages(request, upstream, effective, installed, selected):
+    expected = {}
+    for name in installed:
+        if name in selected:
+            value = selected[name]
+            record = copy.deepcopy(value['metadata'])
+            record['dist'] = {'type': 'path', 'url': immutable_directory(value['source']),
+                              'reference': value['entry']['version']}
+            record['transport-options'] = {'symlink': False}
+        else:
+            record = copy.deepcopy(upstream[name])
+            dist = record.get('dist')
+            if record.get('type') != 'metapackage' and dist is None and effective[name].get('dist') is not None:
+                origin = request.get('originPaths', {}).get(name)
+                if origin is None:
+                    raise ValueError('composer-purifier: source-only package rewrite has no bound origin path: ' + name)
+                record['dist'] = {'type': 'path', 'url': immutable_directory(origin),
+                                  'reference': record['source']['reference']}
+                record['transport-options'] = {'symlink': False}
+            elif record.get('type') != 'metapackage' and dist and dist['type'] == 'path' and \
+                    (dist['url'].startswith('../') or Path(dist['url']).is_absolute()):
+                replacement = request.get('pathRepositories', {}).get(dist['url'])
+                if replacement is not None:
+                    record['dist']['url'] = immutable_directory(replacement)
+                    record['transport-options'] = {'symlink': False}
+        # The existing native pre-pool hook binds require links only; a dependency's
+        # own require-dev is not part of the root development installation.
+        for dependency in record.get('require', {}):
+            if dependency in selected:
+                record['require'][dependency] = '=' + selected[dependency]['entry']['version']
+        expected[name] = record
+    groups = {'expected': expected, 'effective': effective, 'installed': installed}
+    normalized = json.loads(native_output([
+        request['php'], str(Path(__file__).with_name('composer_records.php')), request['autoload'],
+    ], input=json.dumps(groups)))
+    for name in installed:
+        if normalized['effective'][name] != normalized['expected'][name]:
+            raise ValueError('composer-purifier: effective lock differs from bound native package records: ' + name)
+        if normalized['installed'][name] != normalized['effective'][name]:
+            raise ValueError('composer-purifier: installed metadata differs from effective native lock: ' + name)
+    return digest(canonical(normalized['expected']))
+
+
 def native_root(request, installed):
     native_file = installed / 'vendor/composer/installed.php'
     if native_file.is_file():
-        output = subprocess.check_output([
+        output = native_output([
             request['php'], str(Path(__file__).with_suffix('.php')), request['autoload'],
             str(installed), request.get('nativeVersionInput') or '',
-        ], text=True)
+        ])
         return json.loads(output), digest(native_file.read_bytes()), {'kind': 'installed.php'}, {}
     if not str(request.get('nativeComposerVersion', '')).startswith('1.'):
         raise ValueError('composer-purifier: native root metadata unavailable; no selected Composer 1 adapter authority')
@@ -97,11 +167,11 @@ def native_root(request, installed):
         env.pop('COMPOSER_ROOT_VERSION', None)
         if request.get('nativeVersionInput') is not None:
             env['COMPOSER_ROOT_VERSION'] = request['nativeVersionInput']
-        output = subprocess.check_output([
+        output = native_output([
             request['nativePhp'], str(Path(__file__).with_name('composer_root_legacy.php')),
             request['nativeComposerSource'], str(installed), request['nativeComposerVersion'],
             request.get('nativeVersionInput') or '',
-        ], text=True, env=env, cwd=installed)
+        ], env=env, cwd=installed)
     if before != installed_snapshot(installed):
         raise ValueError('composer-purifier: native root query changed installed source, lock or payload')
     authority = {'kind': 'Composer1RootPackage', 'composerVersion': request['nativeComposerVersion'],
@@ -138,19 +208,22 @@ def observe(request):
     if captured_lock.get('packages-dev') and isinstance(native, dict) and native.get('dev') is not True:
         raise ValueError('composer-purifier: full projection requires native development installation')
     installed_packages = native if isinstance(native, list) else native['packages']
-    actual = {package['name']: package for package in installed_packages}
-    expected = {package['name']: package for group in ('packages', 'packages-dev')
-                for package in captured_lock.get(group, [])}
-    effective_packages = {package['name']: package for group in ('packages', 'packages-dev')
-                          for package in effective.get(group, [])}
+    actual = package_map(installed_packages)
+    expected = package_map([package for group in ('packages', 'packages-dev')
+                            for package in captured_lock.get(group, [])])
+    effective_packages = package_map([package for group in ('packages', 'packages-dev')
+                                      for package in effective.get(group, [])])
     if set(expected) - set(actual):
         raise ValueError('composer-purifier: installed graph omits locked production or development packages')
     if set(actual) - set(expected) - set(selected):
         raise ValueError('composer-purifier: installed graph contains unbound packages')
+    if set(effective_packages) != set(actual):
+        raise ValueError('composer-purifier: effective lock and installed package sets differ')
     for name, package in actual.items():
         version = selected[name]['entry']['version'] if name in selected else expected[name]['version']
         if package['version'] != version or effective_packages.get(name, {}).get('version') != version:
             raise ValueError('composer-purifier: installed lock/package version differs from bound source: ' + name)
+    records_hash = validate_packages(request, expected, effective_packages, actual, selected)
     # The location is checked by native PHP; it is deliberately not semantic identity.
     root = {key: root_record.get(key) for key in
             ('name', 'pretty_version', 'version', 'reference', 'type', 'aliases', 'dev')}
@@ -176,6 +249,9 @@ def observe(request):
             'catalogs': [digest(Path(view['catalog']).read_bytes()) for view in request.get('dependencies', [])],
         },
         'runtimeIdentity': request['runtimeIdentity'],
+        'nativePackageRecordsSha256': records_hash,
+        'offlinePackagePaths': {'originPaths': request.get('originPaths', {}),
+                               'pathRepositories': request.get('pathRepositories', {})},
         'evidence': {'installPath': root_record['install_path'], 'sourceRawModes': source_modes,
                      'installedRawModes': installed_modes, 'payload': source_payload,
                      'nativeAuthority': authority_evidence},
