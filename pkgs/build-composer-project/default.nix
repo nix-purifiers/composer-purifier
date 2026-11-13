@@ -48,6 +48,7 @@
   makeBinaryWrapper,
   callPackage,
   python3,
+  writeText,
   php,
   repositoryTools ? ../../tools,
   # The `purifier` library namespace (lib.purifier of
@@ -81,6 +82,8 @@ in
   php ? null,
   # Native Composer is selected independently of the project PHP package.
   composer ? null,
+  # An explicit native Composer input, never an injected manifest version.
+  rootVersion ? null,
   # Metadata tooling may need newer PHP/Composer APIs than the project.
   capturePhp ? null,
   captureComposer ? helperPhp.packages.composer,
@@ -183,6 +186,9 @@ let
     export HOME="$TMPDIR/home"
     export COMPOSER_HOME="$TMPDIR/composer-home"
     export COMPOSER_CACHE_DIR=${cache}
+    ${lib.optionalString (rootVersion != null) ''
+      export COMPOSER_ROOT_VERSION=${lib.escapeShellArg rootVersion}
+    ''}
     ${lib.optionalString (composer != null && lib.versionOlder composer.version "2") ''
       # Composer 1 disables a cache that is not writable. Give it a private
       # copy of the pinned bytes; the Nix store cache stays immutable.
@@ -272,6 +278,33 @@ let
             --add-flags "$dir/${bin}"
         '') bins}
         runHook postInstall
+        ${lib.optionalString withDev ''
+          ${lib.getExe python3} ${repositoryTools}/composer_root.py ${
+            writeText "composer-native-root-request.json" (
+              builtins.toJSON {
+                src = source;
+                inherit composerLock;
+                sourceIdentity = (purifier.inputIdentity source).hash;
+                php = lib.getExe' captureRuntime "php";
+                nativePhp = lib.getExe' projectPhp "php";
+                nativeComposerSource = toString (composerOf projectPhp).src;
+                nativeComposerVersion = (composerOf projectPhp).version;
+                autoload = "${captureComposer}/share/php/composer/vendor/autoload.php";
+                nativeVersionInput = rootVersion;
+                runtimeIdentity = {
+                  php = toString projectPhp;
+                  composer = toString (composerOf projectPhp);
+                  capturePhp = toString captureRuntime;
+                  captureComposer = toString captureComposer;
+                };
+                dependencies = map (input: {
+                  repository = toString input.repository;
+                  catalog = input.repository.catalog;
+                }) selected;
+              }
+            )
+          } "$dir/.composer-purifier/root-context.json" "$dir"
+        ''}
       '';
 
       passthru = {

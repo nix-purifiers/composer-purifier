@@ -32,6 +32,9 @@ foreach ($request['packages'] as $name => $package) {
             }
             if ($providers !== []) {
                 $result[$name][$field][$dependency] = array_keys($providers);
+            } elseif (($field === 'require' || $name === ($request['root'] ?? null)) &&
+                      !Composer\Repository\PlatformRepository::isPlatformPackage($dependency)) {
+                throw new RuntimeException('composer-purifier: unresolved native dependency ' . $name . ' -> ' . $dependency);
             }
         }
     }
