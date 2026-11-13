@@ -44,6 +44,18 @@ foreach ($aliases as $alias) {
         throw new RuntimeException('composer-purifier: inconsistent native Composer 1 root alias');
     }
 }
+$nativePluginRecords = array();
+foreach ($composer->getRepositoryManager()->getLocalRepository()->getPackages() as $installedPackage) {
+    if ($installedPackage->getType() === 'composer-plugin') {
+        $nativePluginRecords[$installedPackage->getName()] = array(
+            'name' => $installedPackage->getName(),
+            'pretty_version' => $installedPackage->getPrettyVersion(),
+            'version' => $installedPackage->getVersion(),
+            'type' => $installedPackage->getType(),
+            'install_path' => realpath($composer->getInstallationManager()->getInstallPath($installedPackage))
+        );
+    }
+}
 echo json_encode(array(
     'name' => $package->getName(),
     'pretty_version' => $pretty,
@@ -55,5 +67,6 @@ echo json_encode(array(
     'dev' => $package->isDev(),
     'install_path' => $installed,
     'authority' => 'Composer1RootPackage',
+    'native_plugin_records' => $nativePluginRecords,
     'composer_version' => Composer\Composer::VERSION
 ));

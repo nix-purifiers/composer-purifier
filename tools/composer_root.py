@@ -163,9 +163,18 @@ def installed_package_paths(root_record, authority, installed, packages, selecte
             if source != Path(native_path).resolve(strict=True):
                 raise ValueError('composer-purifier: installed package path differs from native installed.php: ' + name)
         else:
-            if package.get('type', 'library') != 'library':
+            kind = package.get('type', 'library')
+            if kind not in ('library', 'composer-plugin'):
                 raise ValueError('composer-purifier: Composer 1 package needs a native installation-path adapter: ' + name)
             source = (installed / 'vendor' / name).resolve(strict=True)
+            if 'install-path' in package and (installed / 'vendor/composer' / package['install-path']).resolve(strict=True) != source:
+                raise ValueError('composer-purifier: Composer 1 package path differs from native standard layout: ' + name)
+            if kind == 'composer-plugin':
+                record = root_record.get('native_plugin_records', {}).get(name, {})
+                if record.get('name') != name or record.get('type') != kind or \
+                        record.get('pretty_version') != package['version'] or not record.get('install_path') or \
+                        Path(record['install_path']).resolve(strict=True) != source:
+                    raise ValueError('composer-purifier: Composer 1 plugin path/version differs from native installation manager: ' + name)
         vendor = (installed / 'vendor').resolve(strict=True)
         selected_source = Path(selected[name]['source']).resolve(strict=True) if name in selected else None
         in_vendor = vendor.is_relative_to(installed.resolve()) and source.is_relative_to(vendor)
