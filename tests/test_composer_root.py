@@ -242,6 +242,29 @@ class NativeRoot(unittest.TestCase):
         installed_path.write_bytes(records)
         observe(self.request)
 
+    def test_unused_supplied_development_graph_preserves_native_dependency_semantics(self):
+        tool = Path(sys.modules['composer_root'].__file__).with_name('composer_links.php')
+        request = {'root': 'native/consumer', 'installed': ['native/consumer', 'native/sdk'],
+                   'packages': {
+                       'native/consumer': {'version': '1.0.0', 'metadata': {
+                           'require': {'native/sdk': '^0.24'}}},
+                       'native/sdk': {'version': '0.24.0', 'metadata': {
+                           'require': {'php': '^8.0'}, 'require-dev': {'native/sdk-dev': '^1.0'}}},
+                       'native/sdk-dev': {'version': '1.0.0', 'metadata': {
+                           'require': {'native/uninstalled-tool': '^1.0'}}},
+                   }}
+        result = subprocess.run([php, str(tool), autoload], input=json.dumps(request),
+                                text=True, capture_output=True, check=True)
+        resolved = json.loads(result.stdout)
+        self.assertEqual(resolved['links']['native/consumer']['require']['native/sdk'], ['native/sdk'])
+        self.assertNotIn('native/sdk-dev', resolved['links'])
+        self.assertEqual(set(resolved['versions']), set(request['packages']))
+        request['packages']['native/sdk']['metadata']['require']['native/missing-prod'] = '^1.0'
+        result = subprocess.run([php, str(tool), autoload], input=json.dumps(request),
+                                text=True, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('native/sdk -> native/missing-prod', result.stdout + result.stderr)
+
     def test_unresolved_root_dev_requirement_is_not_silently_dropped(self):
         document = json.loads((self.source / 'composer.json').read_text())
         document['require-dev'] = {'native/missing-dev': '^1.0'}
