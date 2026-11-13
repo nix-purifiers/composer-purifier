@@ -126,6 +126,9 @@ def project(request, destination, catalog_path, composer):
                        'identity': request['origins'][name], 'version': original['version']}
     from composer_root import verify
     root_context, root_identity = verify(request)
+    for name, node in nodes.items():
+        node['identity'] = {'origin': node['identity'],
+                            'installedPayload': root_context['nativePackagePayloads'].get(name)}
     nodes[root_name] = {'metadata': root, 'source': Path(request['src']),
                         'identity': root_identity, 'version': root_context['nativeRoot']['source_version']}
     names = set(nodes) | set(supplied)

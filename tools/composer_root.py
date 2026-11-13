@@ -35,7 +35,7 @@ def native_output(command, **options):
     return result.stdout
 
 
-def payload(source, paths=None):
+def payload(source, paths=None, excluded=EXCLUDED):
     source = Path(source).resolve()
     records, raw_modes = {}, {}
 
@@ -63,7 +63,7 @@ def payload(source, paths=None):
 
     if paths is None:
         for child in sorted(source.iterdir()):
-            if child.name not in EXCLUDED:
+            if child.name not in excluded:
                 visit(child.relative_to(source))
     else:
         for name in sorted(paths):
@@ -259,6 +259,8 @@ def observe(request):
         if package['version'] != version or effective_packages.get(name, {}).get('version') != version:
             raise ValueError('composer-purifier: installed lock/package version differs from bound source: ' + name)
     package_paths = installed_package_paths(root_record, authority, installed, actual, selected)
+    package_payloads = {name: digest(canonical(payload(path, excluded={'.git'})[0]))
+                        for name, path in sorted(package_paths.items())}
     records_hash = validate_packages(request, expected, effective_packages, actual, selected)
     # The location is checked by native PHP; it is deliberately not semantic identity.
     root = {key: root_record.get(key) for key in
@@ -286,6 +288,7 @@ def observe(request):
         },
         'runtimeIdentity': request['runtimeIdentity'],
         'nativePackageRecordsSha256': records_hash,
+        'nativePackagePayloads': package_payloads,
         'nativePackagePaths': {name: (str(Path(path).relative_to(installed.resolve()))
                                       if Path(path).is_relative_to(installed.resolve()) else path)
                                for name, path in sorted(package_paths.items())},

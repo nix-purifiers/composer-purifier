@@ -286,6 +286,21 @@ class NativeRoot(unittest.TestCase):
         vendor.unlink()
         outside_vendor.rename(vendor)
         observe(self.request)
+        _, context_file = self.context()
+        captured = json.loads(context_file.read_text())
+        self.assertIn('native/local-record', captured['nativePackagePayloads'])
+        dependency_manifest = package_source / 'composer.json'
+        dependency_bytes = dependency_manifest.read_bytes()
+        dependency_manifest.write_bytes(dependency_bytes + b'\n')
+        with self.assertRaisesRegex(ValueError, 'stale native root provenance: nativePackagePayloads'):
+            verify(self.request)
+        dependency_manifest.write_bytes(dependency_bytes)
+        verify(self.request)
+        dependency_manifest.chmod(dependency_manifest.stat().st_mode ^ 0o100)
+        with self.assertRaisesRegex(ValueError, 'stale native root provenance: nativePackagePayloads'):
+            verify(self.request)
+        dependency_manifest.chmod(dependency_manifest.stat().st_mode ^ 0o100)
+        verify(self.request)
 
     def test_unused_supplied_development_graph_preserves_native_dependency_semantics(self):
         tool = Path(sys.modules['composer_root'].__file__).with_name('composer_links.php')
