@@ -148,6 +148,40 @@ def validate_packages(request, upstream, effective, installed, selected):
     return digest(canonical(normalized['expected']))
 
 
+def installed_package_paths(root_record, authority, installed, packages, selected):
+    paths = {}
+    native_paths = root_record.get('package_install_paths', {})
+    for name, package in packages.items():
+        if package.get('type') == 'metapackage':
+            continue
+        if authority['kind'] == 'installed.php':
+            relative = package.get('install-path')
+            native_path = native_paths.get(name)
+            if relative is None or native_path is None:
+                raise ValueError('composer-purifier: native package installation path unavailable: ' + name)
+            source = (installed / 'vendor/composer' / relative).resolve(strict=True)
+            if source != Path(native_path).resolve(strict=True):
+                raise ValueError('composer-purifier: installed package path differs from native installed.php: ' + name)
+        else:
+            if package.get('type', 'library') != 'library':
+                raise ValueError('composer-purifier: Composer 1 package needs a native installation-path adapter: ' + name)
+            source = (installed / 'vendor' / name).resolve(strict=True)
+        vendor = (installed / 'vendor').resolve(strict=True)
+        selected_source = Path(selected[name]['source']).resolve(strict=True) if name in selected else None
+        in_vendor = vendor.is_relative_to(installed.resolve()) and source.is_relative_to(vendor)
+        if not in_vendor and source != selected_source:
+            raise ValueError('composer-purifier: native package source escapes vendor or its selected immutable source: ' + name)
+        if selected_source is not None:
+            immutable_directory(selected[name]['source'])
+        if not source.is_dir():
+            raise ValueError('composer-purifier: native package source directory unavailable: ' + name)
+        manifest = json.loads((source / 'composer.json').read_text())
+        if manifest.get('name') != name:
+            raise ValueError('composer-purifier: native installed source package name differs: ' + name)
+        paths[name] = str(source)
+    return paths
+
+
 def native_root(request, installed):
     native_file = installed / 'vendor/composer/installed.php'
     if native_file.is_file():
@@ -224,6 +258,7 @@ def observe(request):
         version = selected[name]['entry']['version'] if name in selected else expected[name]['version']
         if package['version'] != version or effective_packages.get(name, {}).get('version') != version:
             raise ValueError('composer-purifier: installed lock/package version differs from bound source: ' + name)
+    package_paths = installed_package_paths(root_record, authority, installed, actual, selected)
     records_hash = validate_packages(request, expected, effective_packages, actual, selected)
     # The location is checked by native PHP; it is deliberately not semantic identity.
     root = {key: root_record.get(key) for key in
@@ -251,6 +286,9 @@ def observe(request):
         },
         'runtimeIdentity': request['runtimeIdentity'],
         'nativePackageRecordsSha256': records_hash,
+        'nativePackagePaths': {name: (str(Path(path).relative_to(installed.resolve()))
+                                      if Path(path).is_relative_to(installed.resolve()) else path)
+                               for name, path in sorted(package_paths.items())},
         'offlinePackagePaths': {'originPaths': request.get('originPaths', {}),
                                'pathRepositories': request.get('pathRepositories', {})},
         'evidence': {'installPath': root_record['install_path'], 'sourceRawModes': source_modes,

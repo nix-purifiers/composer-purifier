@@ -240,6 +240,51 @@ class NativeRoot(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'installed metadata differs', msg=field):
                 observe(self.request)
         installed_path.write_bytes(records)
+        changed = json.loads(records)
+        changed['packages'][0]['install-path'] = '../..'
+        installed_path.write_text(json.dumps(changed))
+        with self.assertRaisesRegex(ValueError, 'path differs from native installed.php'):
+            observe(self.request)
+        wrong_package = self.installed / 'vendor/native/other'
+        wrong_package.mkdir()
+        (wrong_package / 'composer.json').write_text(json.dumps({'name': 'native/other'}))
+        changed['packages'][0]['install-path'] = '../native/other'
+        installed_path.write_text(json.dumps(changed))
+        native_path = self.installed / 'vendor/composer/installed.php'
+        native_bytes = native_path.read_bytes()
+        native_backup = native_path.with_name('installed.original.php')
+        native_backup.write_bytes(native_bytes)
+        native_path.write_text("<?php $data = require __DIR__.'/installed.original.php'; "
+                               "$data['versions']['native/local-record']['install_path'] = __DIR__.'/../native/other'; "
+                               "return $data;")
+        with self.assertRaisesRegex(ValueError, 'source package name differs'):
+            observe(self.request)
+        native_path.write_bytes(native_bytes)
+        native_backup.unlink()
+        installed_path.write_bytes(records)
+        package_source = self.installed / 'vendor/native/local-record'
+        saved_source = package_source.with_name('local-record.original')
+        outside = self.root / 'outside-package'
+        shutil.copytree(package_source, outside)
+        package_source.rename(saved_source)
+        package_source.symlink_to(outside, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, 'source escapes vendor'):
+            observe(self.request)
+        package_source.unlink()
+        saved_source.rename(package_source)
+        vendor = self.installed / 'vendor'
+        outside_vendor = self.root / 'outside-vendor'
+        vendor.rename(outside_vendor)
+        vendor.symlink_to(outside_vendor, target_is_directory=True)
+        native_backup.write_bytes(native_bytes)
+        native_path.write_text("<?php $data = require __DIR__.'/installed.original.php'; "
+                               "$data['root']['install_path'] = " + json.dumps(str(self.installed)) + "; return $data;")
+        with self.assertRaisesRegex(ValueError, 'source escapes vendor'):
+            observe(self.request)
+        native_path.write_bytes(native_bytes)
+        native_backup.unlink()
+        vendor.unlink()
+        outside_vendor.rename(vendor)
         observe(self.request)
 
     def test_unused_supplied_development_graph_preserves_native_dependency_semantics(self):

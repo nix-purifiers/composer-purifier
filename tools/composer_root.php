@@ -24,4 +24,18 @@ foreach ($root['aliases'] ?? [] as $alias) {
 if (isset($argv[3]) && $argv[3] !== '' && $parser->normalize($argv[3]) !== $root['version']) {
     throw new RuntimeException('composer-purifier: explicit native root version differs from installed metadata');
 }
+// Bind package source paths independently of semantic package record normalization.
+$nativePackages = json_decode(file_get_contents($installed . '/vendor/composer/installed.json'), true, 512, JSON_THROW_ON_ERROR);
+foreach ($nativePackages['packages'] ?? [] as $package) {
+    $record = $data['versions'][$package['name']] ?? null;
+    if (!is_array($record) || !isset($record['version']) ||
+        $parser->normalize($package['version']) !== $record['version']) {
+        throw new RuntimeException('composer-purifier: installed package version differs from native installed.php: ' . $package['name']);
+    }
+}
+$root['package_install_paths'] = [];
+foreach ($data['versions'] ?? [] as $name => $record) {
+    $root['package_install_paths'][$name] = isset($record['install_path'])
+        ? realpath($record['install_path']) : null;
+}
 echo json_encode($root, JSON_THROW_ON_ERROR);
