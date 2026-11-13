@@ -99,7 +99,8 @@ def package_map(packages):
 
 def immutable_directory(value):
     path = Path(value)
-    if not path.is_absolute() or not path.resolve(strict=True).is_relative_to('/nix/store') or not path.is_dir():
+    if not path.is_absolute() or '..' in path.parts or not path.is_relative_to('/nix/store') or \
+            not path.resolve(strict=True).is_relative_to('/nix/store') or not path.is_dir():
         raise ValueError('composer-purifier: offline package rewrite requires an immutable Nix source directory')
     return str(path)
 

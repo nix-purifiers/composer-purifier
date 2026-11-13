@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.environ.get('COMPOSER_REPOSITORY_TOOLS',
                                 str(Path(__file__).resolve().parents[1] / 'tools')))
-from composer_root import FORMAT, capture, observe, payload, verify
+from composer_root import FORMAT, capture, immutable_directory, observe, payload, verify
 
 composer, php, autoload = sys.argv[1:4]
 sys.argv = sys.argv[:1]
@@ -65,6 +65,16 @@ class NativeRoot(unittest.TestCase):
         path.parent.mkdir(exist_ok=True)
         path.write_text(json.dumps(data))
         return data, path
+
+    def test_offline_path_requires_lexical_and_physical_store_containment(self):
+        native_store = Path(php).parent.parent
+        self.assertEqual(immutable_directory(str(native_store)), str(native_store))
+        alias = self.root / 'mutable-store-alias'
+        alias.symlink_to(native_store, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, 'immutable Nix source'):
+            immutable_directory(str(alias))
+        with self.assertRaisesRegex(ValueError, 'immutable Nix source'):
+            immutable_directory(str(native_store / '..' / native_store.name))
 
     def test_native_root_version_and_capture_autoload_are_distinct(self):
         original = (self.source / 'composer.json').read_bytes()
